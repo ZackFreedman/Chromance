@@ -5,6 +5,9 @@ A gorgeous animated ripple effect will automatically kick in after just a few se
 
 Project video: https://www.youtube.com/watch?v=g6n8XLmZ__I
 
+Instructions: https://voidstar.dozuki.com/Guide/Chromance+Assembly+Instructions/6
+(PDF in the repo may be out of date)
+
 The following information is for my configuration. Feel free to build your own - the code is very easy to edit to accommodate yours
 
 Bill of materials:
@@ -31,5 +34,3 @@ Bill of materials:
 - 1x TopRightNode.stl
 - 3x TopCenterNode.stl
 - 20x RegularNode.stl
-
-Instructions on the way!
