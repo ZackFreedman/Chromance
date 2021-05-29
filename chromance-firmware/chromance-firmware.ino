@@ -5,8 +5,16 @@
 
    (C) Voidstar Lab 2021
 */
+/* Choose one: DotStar or NeoPixel */
+#define DOTSTAR
+// #define NEOPIXEL
 
+#ifdef DOTSTAR
 #include <Adafruit_DotStar.h>
+#endif
+#ifdef NEOPIXEL
+#include <Adafruit_NeoPixel.h>
+#endif
 #include <SPI.h>
 #include <ArduinoOSC.h>
 #include <WiFi.h>
@@ -27,12 +35,21 @@ const int recv_port = 42069;  // Port that OSC data should be sent to (pick one,
 
 int lengths[] = {154, 168, 84, 154};  // Strips are different lengths because I am a dumb
 
+#ifdef DOTSTAR
 Adafruit_DotStar strip0(lengths[0], 15, 2, DOTSTAR_BRG);
 Adafruit_DotStar strip1(lengths[1], 0, 4, DOTSTAR_BRG);
 Adafruit_DotStar strip2(lengths[2], 16, 17, DOTSTAR_BRG);
 Adafruit_DotStar strip3(lengths[3], 5, 18, DOTSTAR_BRG);
-
 Adafruit_DotStar strips[4] = {strip0, strip1, strip2, strip3};
+#endif
+
+#ifdef NEOPIXEL
+Adafruit_NeoPixel strip0(lengths[0], 15, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel strip1(lengths[1], 0, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel strip2(lengths[2], 16, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel strip3(lengths[3], 5, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel strips[4] = {strip0, strip1, strip2, strip3};
+#endif
 
 byte ledColors[40][14][3];  // LED buffer - each ripple writes to this, then we write this to the strips
 float decay = 0.95;  // Multiply all LED's by this amount each tick to create fancy fading tails
