@@ -142,7 +142,17 @@ int ledAssignments[40][3] = {
   {0, tailof(1), headof(1)}
 };
 
+// Border nodes are on the very edge of the network.
+// Ripples fired here don't look very impressive.
 int numberOfBorderNodes = 10;
 int borderNodes[] = {0, 1, 2, 3, 6, 10, 13, 19, 21, 24};
+
+// Cube nodes link three equiangular segments
+// Firing ripples that always turn in one direction will draw a cube
+int numberOfCubeNodes = 8;
+int cubeNodes[] = {7, 8, 9, 11, 12, 17, 18};
+
+// Firing ripples that always turn in one direction will draw a starburst
+int starburstNode = 15;
 
 #endif
