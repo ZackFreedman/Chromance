@@ -7,25 +7,26 @@
 #define RIPPLE_H_
 
 // WARNING: These slow things down enough to affect performance. Don't turn on unless you need them!
-//#define DEBUG_ADVANCEMENT  // Print debug messages about ripples' movement
-//#define DEBUG_RENDERING  // Print debug messages about translating logical to actual position
+// #define DEBUG_ADVANCEMENT  // Print debug messages about ripples' movement
+// #define DEBUG_RENDERING  // Print debug messages about translating logical to actual position
 
-#include <Adafruit_DotStar.h>
+// #include <Adafruit_DotStar.h>
 #include "mapping.h"
 
 enum rippleState {
-  dead,
-  withinNode,  // Ripple isn't drawn as it passes through a node to keep the speed consistent
-  travelingUpwards,
-  travelingDownwards
+  STATE_DEAD,
+  STATE_WITHIN_NODE,  // Ripple isn't drawn as it passes through a node to keep the speed consistent
+  STATE_TRAVEL_UP,
+  STATE_TRAVEL_DOWN
 };
 
 enum rippleBehavior {
-  weaksauce = 0,
-  feisty = 1,
-  angry = 2,
-  alwaysTurnsRight = 3,
-  alwaysTurnsLeft = 4
+  BEHAVIOR_WEAK = 0,
+  BEHAVIOR_FEISTY = 1,
+  BEHAVIOR_ANGRY = 2,
+  BEHAVIOR_ALWAYS_RIGHT = 3,
+  BEHAVIOR_ALWAYS_LEFT = 4,
+  BEHAVIOR_EXPLODING = 5
 };
 
 float fmap(float x, float in_min, float in_max, float out_min, float out_max) {
@@ -39,7 +40,7 @@ class Ripple {
       Serial.println(rippleId);
     }
 
-    rippleState state = dead;
+    rippleState state = STATE_DEAD;
     unsigned long color;
 
     /*
@@ -49,7 +50,7 @@ class Ripple {
     int position[2];
 
     // Place the Ripple in a node
-    void start(byte n, byte d, unsigned long c, float s, unsigned long l, byte b) {
+    void start(byte n, byte d, unsigned long c, float s, unsigned long l, rippleBehavior b) {
       color = c;
       speed = s;
       lifespan = l;
@@ -57,7 +58,7 @@ class Ripple {
 
       birthday = millis();
       pressure = 0;
-      state = withinNode;
+      state = STATE_WITHIN_NODE;
 
       position[0] = n;
       position[1] = d;
@@ -72,16 +73,16 @@ class Ripple {
       Serial.println(position[1]);
     }
 
-    void advance(byte ledColors[40][14][3]) {
+    void advance(byte ledColors[NUMBER_OF_SEGMENTS][LEDS_PER_SEGMENTS][3]) {
       unsigned long age = millis() - birthday;
 
-      if (state == dead)
+      if (state == STATE_DEAD)
         return;
 
       pressure += fmap(float(age), 0.0, float(lifespan), speed, 0.0);  // Ripple slows down as it ages
       // TODO: Motion of ripple is severely affected by loop speed. Make it time invariant
 
-      if (pressure < 1 && (state == travelingUpwards || state == travelingDownwards)) {
+      if (pressure < 1 && (state == STATE_TRAVEL_UP || state == STATE_TRAVEL_DOWN)) {
         // Ripple is visible but hasn't moved - render it to avoid flickering
         renderLed(ledColors, age);
       }
@@ -94,7 +95,7 @@ class Ripple {
 #endif
 
         switch (state) {
-          case withinNode: {
+          case STATE_WITHIN_NODE: {
               if (justStarted) {
                 justStarted = false;
               }
@@ -108,13 +109,13 @@ class Ripple {
 
                 int newDirection = -1;
 
-                int sharpLeft = (position[1] + 1) % 6;
-                int wideLeft = (position[1] + 2) % 6;
-                int forward = (position[1] + 3) % 6;
-                int wideRight = (position[1] + 4) % 6;
-                int sharpRight = (position[1] + 5) % 6;
+                int sharpLeft = (position[1] + 1) % SIDES_PER_NODES;
+                int wideLeft = (position[1] + 2) % SIDES_PER_NODES;
+                int forward = (position[1] + 3) % SIDES_PER_NODES;
+                int wideRight = (position[1] + 4) % SIDES_PER_NODES;
+                int sharpRight = (position[1] + 5) % SIDES_PER_NODES;
 
-                if (behavior <= 2) {  // Semi-random aggressive turn mode
+                if (behavior <= BEHAVIOR_ANGRY) {  // Semi-random aggressive turn mode
                   // The more aggressive a ripple, the tighter turns it wants to make.
                   // If there aren't any segments it can turn to, we need to adjust its behavior.
                   byte anger = behavior;
@@ -203,9 +204,9 @@ class Ripple {
                     // Good thing we don't have any of those!
                   }
                 }
-                else if (behavior == alwaysTurnsRight) {
-                  for (int i = 1; i < 6; i++) {
-                    int possibleDirection = (position[1] + i) % 6;
+                else if (behavior == BEHAVIOR_ALWAYS_RIGHT) {
+                  for (int i = 1; i < SIDES_PER_NODES; i++) {
+                    int possibleDirection = (position[1] + i) % SIDES_PER_NODES;
 
                     if (nodeConnections[position[0]][possibleDirection] >= 0) {
                       newDirection = possibleDirection;
@@ -217,13 +218,27 @@ class Ripple {
                   Serial.println("  Turning as rightward as possible");
 #endif
                 }
-                else if (behavior == alwaysTurnsLeft) {
+                else if (behavior == BEHAVIOR_ALWAYS_LEFT) {
                   for (int i = 5; i >= 1; i--) {
-                    int possibleDirection = (position[1] + i) % 6;
+                    int possibleDirection = (position[1] + i) % SIDES_PER_NODES;
 
                     if (nodeConnections[position[0]][possibleDirection] >= 0) {
                       newDirection = possibleDirection;
                       break;
+                    }
+                  }
+
+#ifdef DEBUG_ADVANCEMENT
+                  Serial.println("  Turning as leftward as possible");
+#endif
+                }
+                else if (behavior == BEHAVIOR_EXPLODING) {
+                  for (int i = 5; i >= 1; i--) {
+                    int possibleDirection = (position[1] + i) % SIDES_PER_NODES;
+
+                    if (nodeConnections[position[0]][possibleDirection] >= 0 && (possibleDirection != position[0])) {
+                      newDirection = possibleDirection;
+                      // start
                     }
                   }
 
@@ -253,23 +268,23 @@ class Ripple {
 #ifdef DEBUG_ADVANCEMENT
                 Serial.println("  (starting at bottom)");
 #endif
-                state = travelingUpwards;
+                state = STATE_TRAVEL_UP;
                 position[1] = 0;  // Starting at bottom of segment
               }
               else {
 #ifdef DEBUG_ADVANCEMENT
                 Serial.println("  (starting at top)");
 #endif
-                state = travelingDownwards;
-                position[1] = 13; // Starting at top of 14-LED-long strip
+                state = STATE_TRAVEL_DOWN;
+                position[1] = LEDS_PER_SEGMENTS - 1; // Starting at top of LED-strip
               }
               break;
             }
 
-          case travelingUpwards: {
+          case STATE_TRAVEL_UP: {
               position[1]++;
 
-              if (position[1] >= 14) {
+              if (position[1] >= LEDS_PER_SEGMENTS) {
                 // We've reached the top!
 #ifdef DEBUG_ADVANCEMENT
                 Serial.print("  Reached top of seg. ");
@@ -278,7 +293,7 @@ class Ripple {
                 // Enter the new node.
                 int segment = position[0];
                 position[0] = segmentConnections[position[0]][0];
-                for (int i = 0; i < 6; i++) {
+                for (int i = 0; i < SIDES_PER_NODES; i++) {
                   // Figure out from which direction the ripple is entering the node.
                   // Allows us to exit in an appropriately aggressive direction.
                   int incomingConnection = nodeConnections[position[0]][i];
@@ -291,7 +306,7 @@ class Ripple {
                 Serial.print(" from direction ");
                 Serial.println(position[1]);
 #endif
-                state = withinNode;
+                state = STATE_WITHIN_NODE;
               }
               else {
 #ifdef DEBUG_ADVANCEMENT
@@ -304,7 +319,7 @@ class Ripple {
               break;
             }
 
-          case travelingDownwards: {
+          case STATE_TRAVEL_DOWN: {
               position[1]--;
               if (position[1] < 0) {
                 // We've reached the bottom!
@@ -328,7 +343,7 @@ class Ripple {
                 Serial.print(" from direction ");
                 Serial.println(position[1]);
 #endif
-                state = withinNode;
+                state = STATE_WITHIN_NODE;
               }
               else {
 #ifdef DEBUG_ADVANCEMENT
@@ -347,13 +362,13 @@ class Ripple {
 
         pressure -= 1;
 
-        if (state == travelingUpwards || state == travelingDownwards) {
+        if (state == STATE_TRAVEL_UP || state == STATE_TRAVEL_DOWN) {
           // Ripple is visible - render it
           renderLed(ledColors, age);
         }
       }
 
-#ifdef DEBUG_ADVANCEMENT
+#ifdef DEBUG_AGE
       Serial.print("  Age is now ");
       Serial.print(age);
       Serial.print('/');
@@ -361,11 +376,11 @@ class Ripple {
 #endif
 
       if (lifespan && age >= lifespan) {
-        // We dead
-#ifdef DEBUG_ADVANCEMENT
-        Serial.println("  Lifespan is up! Ripple is dead.");
+        // We STATE_DEAD
+#ifdef DEBUG_AGE
+        Serial.println("  Lifespan is up! Ripple is STATE_DEAD.");
 #endif
-        state = dead;
+        state = STATE_DEAD;
         position[0] = position[1] = pressure = age = 0;
       }
     }
@@ -379,20 +394,16 @@ class Ripple {
        1: Can take 60-degree turns
        2: Can take 120-degree turns
     */
-    byte behavior;
-
+    rippleBehavior behavior;
     bool justStarted = false;
-
     float pressure;  // When Pressure reaches 1, ripple will move
     unsigned long birthday;  // Used to track age of ripple
-
     static byte rippleCount;  // Used to give them unique ID's
     byte rippleId;  // Used to identify this ripple in debug output
 
-    void renderLed(byte ledColors[40][14][3], unsigned long age) {
+    void renderLed(byte ledColors[NUMBER_OF_SEGMENTS][LEDS_PER_SEGMENTS][3], unsigned long age) {
       int strip = ledAssignments[position[0]][0];
       int led = ledAssignments[position[0]][2] + position[1];
-
       int red = ledColors[position[0]][position[1]][0];
       int green = ledColors[position[0]][position[1]][1];
       int blue = ledColors[position[0]][position[1]][2];
@@ -412,8 +423,9 @@ class Ripple {
       Serial.print(led);
       Serial.print(", color 0x");
       for (int i = 0; i < 3; i++) {
-        if (ledColors[position[0]][position[1]][i] <= 0x0F)
+        if (ledColors[position[0]][position[1]][i] <= 0x0F){
           Serial.print('0');
+        }
         Serial.print(ledColors[position[0]][position[1]][i], HEX);
       }
       Serial.println();
