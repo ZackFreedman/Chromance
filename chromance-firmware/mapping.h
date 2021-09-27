@@ -222,6 +222,9 @@ int borderNodes[] = {0, 1, 2, 3, 6, 10, 13, 14, 16, 19, 21 , 22 , 23};
 int numberOfCubeNodes = 7;
 int cubeNodes[] = {7, 8, 9, 11, 12, 17, 18};
 
+int numberOfTriNodes = 13;
+int triNodes[] = {4,5, 7, 8, 9, 11, 12, 14,15,16, 17, 18, 20};
+
 // Firing ripples that always turn in one direction will draw a starburst
 int starburstNode = 15;
 

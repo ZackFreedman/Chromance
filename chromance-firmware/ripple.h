@@ -21,12 +21,14 @@ enum rippleState {
 };
 
 enum rippleBehavior {
-  BEHAVIOR_WEAK = 0,
-  BEHAVIOR_FEISTY = 1,
-  BEHAVIOR_ANGRY = 2,
-  BEHAVIOR_ALWAYS_RIGHT = 3,
-  BEHAVIOR_ALWAYS_LEFT = 4,
-  BEHAVIOR_EXPLODING = 5
+  BEHAVIOR_COUCH_POTATO, // Stop at next node
+  BEHAVIOR_LAZY, // Only go straight
+  BEHAVIOR_WEAK, // Go straight if possible
+  BEHAVIOR_FEISTY,
+  BEHAVIOR_ANGRY,
+  BEHAVIOR_ALWAYS_RIGHT,
+  BEHAVIOR_ALWAYS_LEFT,
+  BEHAVIOR_EXPLODING // Coming soon
 };
 
 float fmap(float x, float in_min, float in_max, float out_min, float out_max) {
@@ -121,15 +123,31 @@ class Ripple {
                   byte anger = behavior;
 
                   while (newDirection < 0) {
-                    if (anger == 0) {
+                    if (anger == BEHAVIOR_COUCH_POTATO) {
+                      int forwardConnection = nodeConnections[position[0]][forward];
+
+                        // We can't go straight ahead - we need to take a rest
+#ifdef DEBUG_ADVANCEMENT
+                      Serial.println("  Never continue ... too lazy - stopping");
+#endif
+                      // Die now
+                      age = lifespan;
+                      break;
+                      //break;
+                    }
+
+                    if (anger == BEHAVIOR_LAZY) {
                       int forwardConnection = nodeConnections[position[0]][forward];
 
                       if (forwardConnection < 0) {
-                        // We can't go straight ahead - we need to take a more aggressive angle
+                        // We can't go straight ahead - we need to take a rest
 #ifdef DEBUG_ADVANCEMENT
-                        Serial.println("  Can't go straight - picking more agr. path");
+                        Serial.println("  Can't go straight - stopping");
 #endif
-                        anger++;
+                        // Die now
+                        age = lifespan;
+                        break;
+                        //break;
                       }
                       else {
 #ifdef DEBUG_ADVANCEMENT
@@ -139,7 +157,25 @@ class Ripple {
                       }
                     }
 
-                    if (anger == 1) {
+                    if (anger == BEHAVIOR_WEAK) {
+                      int forwardConnection = nodeConnections[position[0]][forward];
+
+                      if (forwardConnection < 0) {
+                        // We can't go straight ahead - we need to take a more aggressive angle
+#ifdef DEBUG_ADVANCEMENT
+                        Serial.println("  Can't go straight - picking more agr. path");
+#endif
+                        anger += 1;
+                      }
+                      else {
+#ifdef DEBUG_ADVANCEMENT
+                        Serial.println("  Going forward");
+#endif
+                        newDirection = forward;
+                      }
+                    }
+
+                    if (anger == BEHAVIOR_FEISTY) {
                       int leftConnection = nodeConnections[position[0]][wideLeft];
                       int rightConnection = nodeConnections[position[0]][wideRight];
 
@@ -165,11 +201,11 @@ class Ripple {
 #ifdef DEBUG_ADVANCEMENT
                         Serial.println("  Can't make wide turn - picking more agr. path");
 #endif
-                        anger++;  // Can't take shallow turn - must become more aggressive
+                        anger+=1;  // Can't take shallow turn - must become more aggressive
                       }
                     }
 
-                    if (anger == 2) {
+                    if (anger == BEHAVIOR_ANGRY) {
                       int leftConnection = nodeConnections[position[0]][sharpLeft];
                       int rightConnection = nodeConnections[position[0]][sharpRight];
 

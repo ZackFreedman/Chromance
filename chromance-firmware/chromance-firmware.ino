@@ -11,6 +11,7 @@
 #include <SPI.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266mDNS.h>
+#include <ESP8266WebServer.h>
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h>
 #include "mapping.h"
@@ -27,16 +28,10 @@ const int port = 23;
 //how many clients should be able to telnet to this ESP8266
 #define MAX_SRV_CLIENTS 2
 
+unsigned int localPort = 8888;      // local port to listen on
 
-/*
-int lengths[] = {154, 168, 84, 154};  // Strips are different lengths because I am a dumb
 
-Adafruit_DotStar strip0(lengths[0], 15, 2, DOTSTAR_BRG);
-Adafruit_DotStar strip1(lengths[1], 0, 4, DOTSTAR_BRG);
-Adafruit_DotStar strip2(lengths[2], 16, 17, DOTSTAR_BRG);
-Adafruit_DotStar strip3(lengths[3], 5, 18, DOTSTAR_BRG);
-Adafruit_DotStar strips[4] = {strip0, strip1, strip2, strip3};
-*/
+WiFiUDP Udp;
 
 Adafruit_NeoPixel strip(NUM_OF_PIXELS, D4, NEO_GRB + NEO_KHZ800);
 
@@ -87,10 +82,9 @@ Ripple ripples[NUMBER_OF_RIPPLES] = {
 
 #define autoPulseTimeout 5000  // If no heartbeat is received in this many ms, begin firing random/simulated pulses
 #define randomPulseTime 5000  // Fire a random pulse every (this many) ms
-unsigned long lastRandomPulse;
+
 byte lastAutoPulseNode = 255;
 
-byte numberOfAutoPulseTypes = randomPulsesEnabled + cubePulsesEnabled + starburstPulsesEnabled;
 byte currentAutoPulseType = 0;
 #define autoPulseChangeTime 30000
 unsigned long lastAutoPulseChange;
@@ -106,104 +100,455 @@ unsigned long nextSimulatedEda;
 void renderCube(int node);
 void renderUnstoppableSnake(int startingNode);
 void renderContour(int node);
+void renderStarburst(void);
 
+// Process the original chromance animation
+void chromanceProcess(void);
+void processUDP(void);
+
+ESP8266WebServer server(80);
+
+void handleRoot() {
+  String header;
+  header += "  <!DOCTYPE html>    ";
+  header += "<html lang = \"en\">    ";
+  header += "<head>    ";
+  header += "<title>This is a Bootstrap CDN example</title>    ";
+  header += "<meta name = \"viewport\" content = \"width = device-width, initial-scale=1\">";
+  header += "  <link rel = \"stylesheet\" href  = \"https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css\">";
+  header += "</head>";
+  header += "<body>";
+  header += "<div class = \"container\">";
+  header += "<h1 align = \"center\"> Leds Controller</h1>";
+  header += "<p>Write your text here..</p>";
+  header += "</div>";
+  header += "  <script src = \"https://ajax.googleapis.com/ajax/libs/jquery/1.12.0/jquery.min.js\"></script>    ";
+  header += "  <script src = \"https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/js/bootstrap.min.js\"></script>    ";
+  header += "</body>";
+  header += "</html> ";
+  server.send(200, "text/html", header);
+
+}
+
+void handleNotFound() {
+    // digitalWrite(led, 1);
+    String message = "File Not Found\n\n";
+    message += "URI: ";
+    message += server.uri();
+    message += "\nMethod: ";
+    message += (server.method() == HTTP_GET) ? "GET" : "POST";
+    message += "\nArguments: ";
+    message += server.args();
+    message += "\n";
+    for (uint8_t i = 0; i < server.args(); i++) {
+        message += " " + server.argName(i) + ": " + server.arg(i) + "\n";
+    }
+    server.send(404, "text/plain", message);
+    // digitalWrite(led, 0);
+    }
+
+void setupOTA(){
+    String hostname(HOSTNAME);
+    // Start OTA server.
+    ArduinoOTA.setHostname((const char *)hostname.c_str());
+    // Wireless OTA updating? On an ARDUINO?! It's more likely than you think!
+    ArduinoOTA
+    .onStart([]() {
+        String type;
+        if (ArduinoOTA.getCommand() == U_FLASH)
+        type = "sketch";
+        else // U_SPIFFS
+        type = "filesystem";
+
+        // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
+        Serial.println("Start updating " + type);
+    });
+    ArduinoOTA.onEnd([]() {
+        Serial.println("\nEnd");
+    });
+    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+        Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+    });
+    ArduinoOTA.onError([](ota_error_t error) {
+        Serial.printf("Error[%u]: ", error);
+        if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
+        else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
+        else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
+        else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
+        else if (error == OTA_END_ERROR) Serial.println("End Failed");
+    });
+
+    ArduinoOTA.begin();
+}
+
+void setupHTTPServer(){
+    server.on("/", handleRoot);
+
+    server.on("/inline", []() {
+        server.send(200, "text/plain", "this works as well");
+    });
+
+    server.on("/gif", []() {
+        static const uint8_t gif[] PROGMEM = {
+        0x47, 0x49, 0x46, 0x38, 0x37, 0x61, 0x10, 0x00, 0x10, 0x00, 0x80, 0x01,
+        0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0x2c, 0x00, 0x00, 0x00, 0x00,
+        0x10, 0x00, 0x10, 0x00, 0x00, 0x02, 0x19, 0x8c, 0x8f, 0xa9, 0xcb, 0x9d,
+        0x00, 0x5f, 0x74, 0xb4, 0x56, 0xb0, 0xb0, 0xd2, 0xf2, 0x35, 0x1e, 0x4c,
+        0x0c, 0x24, 0x5a, 0xe6, 0x89, 0xa6, 0x4d, 0x01, 0x00, 0x3b
+        };
+        char gif_colored[sizeof(gif)];
+        memcpy_P(gif_colored, gif, sizeof(gif));
+        // Set the background to a random set of colors
+        gif_colored[16] = millis() % 256;
+        gif_colored[17] = millis() % 256;
+        gif_colored[18] = millis() % 256;
+        server.send(200, "image/gif", gif_colored, sizeof(gif_colored));
+    });
+
+    server.onNotFound(handleNotFound);
+    server.begin();
+}
+
+// Main setup function
 void setup() {
-  Serial.begin(115200);
-  Serial.println("*** LET'S GOOOOO ***");
+    Serial.begin(115200);
+    Serial.println("*** LET'S GOOOOO ***");
 
-  strip.begin();
-  strip.show();
+    strip.begin();
+    strip.show();
 
-//  WiFi.mode(WIFI_STA);
-  WiFi.begin("Nismon-IOT", "Ni$monIOT!!!!!");
-  WiFi.config(ip, gateway, subnet);
-  
-  // Set Hostname.
-  String hostname(HOSTNAME);
-  hostname += String(ESP.getChipId(), HEX);
-  WiFi.hostname(hostname);
+    //  WiFi.mode(WIFI_STA);
+    WiFi.begin("Nismon-IOT", "Ni$monIOT!!!!!");
+    WiFi.config(ip, gateway, subnet);
+    
+    // Set Hostname.
+    String hostname(HOSTNAME);
+    hostname += String(ESP.getChipId(), HEX);
+    WiFi.hostname(hostname);
 
-  // Print hostname.
-  Serial.println("Hostname: " + hostname);
-  //Serial.println(WiFi.hostname());
+    // Print hostname.
+    Serial.println("Hostname: " + hostname);
+    //Serial.println(WiFi.hostname());
 
+    
+    while (WiFi.waitForConnectResult() != WL_CONNECTED) {
+        Serial.println("Connection Failed! Rebooting...");
+        delay(5000);
+        ESP.restart();
+    }
 
-  while (WiFi.waitForConnectResult() != WL_CONNECTED) {
-    Serial.println("Connection Failed! Rebooting...");
-    delay(5000);
-    ESP.restart();
-  }
+    Serial.print("WiFi connected, IP = ");
+    Serial.println(WiFi.localIP());
 
-  Serial.print("WiFi connected, IP = ");
-  Serial.println(WiFi.localIP());
+    setupOTA();
 
-  // Start OTA server.
-  ArduinoOTA.setHostname((const char *)hostname.c_str());
-  // Wireless OTA updating? On an ARDUINO?! It's more likely than you think!
-  ArduinoOTA
-  .onStart([]() {
-    String type;
-    if (ArduinoOTA.getCommand() == U_FLASH)
-      type = "sketch";
-    else // U_SPIFFS
-      type = "filesystem";
+    Serial.println("Ready for WiFi OTA updates");
+    Serial.print("IP address: ");
+    Serial.println(WiFi.localIP());
 
-    // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
-    Serial.println("Start updating " + type);
-  });
-  ArduinoOTA.onEnd([]() {
-    Serial.println("\nEnd");
-  });
-  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-    Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
-  });
-  ArduinoOTA.onError([](ota_error_t error) {
-    Serial.printf("Error[%u]: ", error);
-    if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
-    else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
-    else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
-    else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
-    else if (error == OTA_END_ERROR) Serial.println("End Failed");
-  });
+    Udp.begin(localPort);
 
-  ArduinoOTA.begin();
-
-  Serial.println("Ready for WiFi OTA updates");
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
+    setupHTTPServer();
 }
 
 void loop() {
-  unsigned long benchmark = millis();
-  static int currentLed = 0;
-  static unsigned long lastStep = 0;
-  
-  
-  ArduinoOTA.handle();
+    unsigned long benchmark = millis();
+    static int currentLed = 0;
+    static unsigned long lastStep = 0;
+    
+    
+    ArduinoOTA.handle();
+    server.handleClient();
 
-  // Fade all dots to create trails
-  for (int seg = 0; seg < NUMBER_OF_SEGMENTS; seg++) {
-    for (int led = 0; led < LEDS_PER_SEGMENTS; led++) {
-      for (int i = 0; i < 3; i++) {
-        ledColors[seg][led][i] *= decay;
-        // ledColors[seg][led][i] *= 5;
+    processUDP();
+
+    chromanceProcess();
+
+    //
+    for (uint8_t segment = 0; segment < NUMBER_OF_SEGMENTS; segment++) {
+        for (uint8_t fromBottom = 0; fromBottom < LEDS_PER_SEGMENTS; fromBottom++) {
+
+            uint16_t led = round(fmap(fromBottom,0, (LEDS_PER_SEGMENTS-1),ledAssignments[segment][2], ledAssignments[segment][1]));
+            strip.setPixelColor(led, ledColors[segment][fromBottom][0], ledColors[segment][fromBottom][1],ledColors[segment][fromBottom][2]);
+
+        }
+    }
+
+    // Update LEDS !
+    strip.show();
+
+}
+
+void processUDP(){
+    // buffers for receiving and sending data
+    static char  ReplyBuffer[] = "acknowledged\r\n";       // a string to send back
+    static char packetBuffer[UDP_TX_PACKET_MAX_SIZE + 1]; //buffer to hold incoming packet,
+
+      // if there's data available, read a packet
+    int packetSize = Udp.parsePacket();
+    if (packetSize) {
+        Serial.printf("Received packet of size %d from %s:%d\n    (to %s:%d, free heap = %d B)\n",
+                        packetSize,
+                        Udp.remoteIP().toString().c_str(), Udp.remotePort(),
+                        Udp.destinationIP().toString().c_str(), Udp.localPort(),
+                        ESP.getFreeHeap());
+
+        // read the packet into packetBufffer
+        int n = Udp.read(packetBuffer, UDP_TX_PACKET_MAX_SIZE);
+        packetBuffer[n] = 0;
+        switch (packetBuffer[0]){
+
+            case 's':
+                renderStarburst();
+                break;
+            case 'c':
+                renderCube(random(numberOfCubeNodes));
+                break;
+            case 'o':
+                renderContour(1);
+                break;
+            case 't':
+                test();
+                break;
+        }
+        Serial.println("Contents:");
+        Serial.println(packetBuffer);
+
+        // send a reply, to the IP address and port that sent us the packet we received
+        Udp.beginPacket(Udp.remoteIP(), Udp.remotePort());
+        Udp.write(ReplyBuffer);
+        Udp.endPacket();
+    }
+}
+
+void chromanceProcess(){
+    static unsigned long lastRandomPulse;
+    
+    // Fade all dots to create trails
+    for (int seg = 0; seg < NUMBER_OF_SEGMENTS; seg++) {
+        for (int led = 0; led < LEDS_PER_SEGMENTS; led++) {
+            for (int i = 0; i < 3; i++) {
+                ledColors[seg][led][i] *= decay;
+            }
+        }
+    }
+
+    // Advance each started ripple
+    for (int i = 0; i < NUMBER_OF_RIPPLES; i++) {
+        ripples[i].advance(ledColors);
+    }
+
+    // When biometric data is unavailable, visualize at random
+    if (millis() - lastRandomPulse >= random(2000,6000)) {
+
+        // renderTriburst();
+        
+        currentAutoPulseType = random(5);
+        switch (currentAutoPulseType) {
+        case 0: {
+            renderContour(1);
+            break;
+            }
+
+        case 1: {
+            renderUnstoppableSnake(random(0,NUMBER_OF_NODES));
+            break;
+            }
+
+        case 2: {
+            renderCube(random(numberOfCubeNodes));
+            break;
+            }
+
+        case 3: {
+            renderStarburst();
+            break;
+            }
+        case 4: {
+            renderTriburst();
+            break;
+            }
+
+        default:
+            break;
+        }
+        
+        lastRandomPulse = millis(); 
+    }
+}
+
+void renderCube(int node){
+
+    while (node == lastAutoPulseNode)
+        node = cubeNodes[random(numberOfCubeNodes)];
+
+    lastAutoPulseNode = node;
+
+    rippleBehavior behavior = random(2) ? BEHAVIOR_ALWAYS_LEFT : BEHAVIOR_ALWAYS_RIGHT;
+
+    for (int i = 0; i < SIDES_PER_NODES; i++) {
+        if (nodeConnections[node][i] >= 0) {
+        for (int j = 0; j < NUMBER_OF_RIPPLES; j++) {
+            if (ripples[j].state == STATE_DEAD) {
+            ripples[j].start(
+                node,
+                i,
+                getRandomColor(),
+                getSpeed(),
+                8000,
+                behavior);
+            break;
+            }
+        }
+        }
+    }
+}
+
+void renderContour(int node){
+
+    rippleBehavior behavior;
+
+    for (int i = 0; i < SIDES_PER_NODES; i++) {
+        if (nodeConnections[node][i] >= 0) {
+        if ( i < 3){
+            behavior = BEHAVIOR_ALWAYS_RIGHT;
+        }
+        else{
+            behavior = BEHAVIOR_ALWAYS_LEFT;
+        }
+        for (int j = 0; j < NUMBER_OF_RIPPLES; j++) {
+            if (ripples[j].state == STATE_DEAD) {
+            ripples[j].start(
+                node,
+                i,
+                getRandomColor(),
+                getSpeed(),
+                8000,
+                behavior);
+            break;
+            }
+        }
+        }
+    }
+}
+
+void renderUnstoppableSnake(int startingNode){
+    //  int node = cubeNodes[random(numberOfCubeNodes)];
+    unsigned int randStartingNode = random(5);
+
+    rippleBehavior behavior = BEHAVIOR_ANGRY;
+
+    for (int i = 0; i < SIDES_PER_NODES; i++) {
+        if (nodeConnections[startingNode][(randStartingNode+i)%5] >= 0) {
+        for (int j = 0; j < NUMBER_OF_RIPPLES; j++) {
+            if (ripples[j].state == STATE_DEAD) {
+            ripples[j].start(
+                startingNode,
+                (randStartingNode+i)%5,
+                getRandomColor(),
+                getSpeed(),
+                8000,
+                behavior);
+            return;
+            }
+        }
+        }
+    }
+}
+
+void renderStarburst(){
+    //  int node = cubeNodes[random(numberOfCubeNodes)];
+    unsigned int startingNode = starburstNode;
+
+    rippleBehavior behavior = BEHAVIOR_WEAK;
+    uint32_t color = getRandomColor();
+    for (int i = 0; i < SIDES_PER_NODES; i++) {
+        if (nodeConnections[startingNode][i] >= 0) {
+        for (int j = 0; j < NUMBER_OF_RIPPLES; j++) {
+            if (ripples[j].state == STATE_DEAD) {
+            ripples[j].start(
+                startingNode,
+                i,
+                getRandomColor(),
+                getSpeed(),
+                5000,
+                behavior);
+            break;
+            }
+        }
+        }
+    }
+}
+
+void renderTriburst(){
+    //  int node = cubeNodes[random(numberOfCubeNodes)];
+    unsigned int startingNode = triNodes[random(numberOfTriNodes)];;
+
+    rippleBehavior behavior = BEHAVIOR_COUCH_POTATO;
+    uint8_t rippleCnt = 0;
+    int i=0;
+    
+    while (rippleCnt < 3) {
+        if (nodeConnections[startingNode][i] >= 0) {
+        i+=2; // Skip 1 side
+        i%=6;
+        rippleCnt ++;
+        for (int j = 0; j < NUMBER_OF_RIPPLES; j++) {
+            if (ripples[j].state == STATE_DEAD) {
+            ripples[j].start(
+                startingNode,
+                i,
+                getRandomColor(),
+                getSpeed(),
+                random(500,2500),
+                behavior);
+            break;
+            }
+        }
+        }else{
+        i++;
+        }
+    }
+}
+
+
+void test(){
+//  int node = cubeNodes[random(numberOfCubeNodes)];
+  unsigned int startingNode = starburstNode;
+  static int node = 0;
+
+  rippleBehavior behavior = BEHAVIOR_LAZY;
+  if (nodeConnections[startingNode][node] >= 0) {
+    for (int j = 0; j < NUMBER_OF_RIPPLES; j++) {
+      if (ripples[j].state == STATE_DEAD) {
+        ripples[j].start(
+          startingNode,
+          node,
+          getRandomColor(),
+          getSpeed(),
+          5000,
+          behavior);
+        break;
       }
     }
   }
+  node++;
+  node %= 6;
+}
 
-  for (int i = 0; i < NUMBER_OF_RIPPLES; i++) {
-    ripples[i].advance(ledColors);
-  }
+uint32_t getRandomColor()
+{
+  uint16_t color = random(0x7FFF,0xFFFF);
+  return strip.ColorHSV(color, random(180,255), random(100,255));
+}
 
-  for (uint8_t segment = 0; segment < NUMBER_OF_SEGMENTS; segment++) {
-    for (uint8_t fromBottom = 0; fromBottom < LEDS_PER_SEGMENTS; fromBottom++) {
-      //int strip = ledAssignments[segment][0]; // Select the proper strip number ( if you have multiple strips )
-      uint16_t led = round(fmap(fromBottom,0, (LEDS_PER_SEGMENTS-1),ledAssignments[segment][2], ledAssignments[segment][1]));
-      strip.setPixelColor(led, ledColors[segment][fromBottom][0], ledColors[segment][fromBottom][1],ledColors[segment][fromBottom][2]);
+float getSpeed(){
+  return random(500,800)/1000.0;
+  // return 0.5;
+}
 
-    }
-  }
-  // // strip.setPixelColor(currentLed, 0,0,0);
+void testStrip(){
+    // // strip.setPixelColor(currentLed, 0,0,0);
   // for (int i = 0; i < NUMBER_OF_SEGMENTS; i++) {
 
   //  strip.setPixelColor(LEDS_PER_SEGMENTS*(i-1), 0,0,0);
@@ -232,178 +577,4 @@ void loop() {
   //  strip.setPixelColor((LEDS_PER_SEGMENTS*i)+10, 20,50,50);
   //  strip.setPixelColor((LEDS_PER_SEGMENTS*i)+11, 20,50,50);
   // // currentLed %= (NUMBER_OF_SEGMENTS*LEDS_PER_SEGMENTS);
-  // // lastStep = millis();
-  strip.show();
-  
-  // delay(500);
-  // }
-
-
-  // When biometric data is unavailable, visualize at random
-  if (numberOfAutoPulseTypes && millis() - lastRandomPulse >= randomPulseTime) {
-    unsigned int baseColor = random(0xFFFF);
-
-    currentAutoPulseType = random(3);
-    switch (currentAutoPulseType) {
-      case 0: {
-          renderContour(1);
-        }
-
-      case 1: {
-          //renderCube(11);
-          //renderContour(1);
-          renderUnstoppableSnake(15);
-          break;
-        }
-
-      case 2: {
-          renderCube(random(numberOfCubeNodes));
-        }
-
-      default:
-        break;
-    }
-    lastRandomPulse = millis();
-
-    if (simulatedBiometricsEnabled) {
-      // Simulated heartbeat
-      if (millis() >= nextSimulatedHeartbeat) {
-        for (int i = 0; i < SIDES_PER_NODES; i++) {
-          for (int j = 0; j < NUMBER_OF_RIPPLES; j++) {
-            if (ripples[j].state == STATE_DEAD) {
-              ripples[j].start(
-                15,
-                i,
-                0xEE1111,
-                float(random(100)) / 100.0 * .1 + .4,
-                1000,
-                BEHAVIOR_WEAK);
-
-              break;
-            }
-          }
-        }
-
-        nextSimulatedHeartbeat = millis() + simulatedHeartbeatBaseTime + random(simulatedHeartbeatVariance);
-      }
-
-      // Simulated EDA ripples
-      if (millis() >= nextSimulatedEda) {
-        for (int i = 0; i < 10; i++) {
-          for (int j = 0; j < NUMBER_OF_RIPPLES; j++) {
-            if (ripples[j].state == STATE_DEAD) {
-              byte targetNode = borderNodes[random(numberOfBorderNodes)];
-              byte direction = 255;
-
-              while (direction == 255) {
-                direction = random(6);
-                if (nodeConnections[targetNode][direction] < 0)
-                  direction = 255;
-              }
-
-              ripples[j].start(
-                targetNode,
-                direction,
-                0x1111EE,
-                float(random(100)) / 100.0 * .5 + 2,
-                300,
-                BEHAVIOR_ANGRY
-              );
-
-              break;
-            }
-          }
-        }
-
-        nextSimulatedEda = millis() + simulatedEdaBaseTime + random(simulatedEdaVariance);
-      }
-    }
-  
-  }
-}
-
-void renderCube(int node){
-
-//  int node = cubeNodes[random(numberOfCubeNodes)];
-  unsigned int baseColor = random(0xFFFF);
-  
-  while (node == lastAutoPulseNode)
-    node = cubeNodes[random(numberOfCubeNodes)];
-
-  lastAutoPulseNode = node;
-
-  rippleBehavior behavior = random(2) ? BEHAVIOR_ALWAYS_LEFT : BEHAVIOR_ALWAYS_RIGHT;
-
-  for (int i = 0; i < SIDES_PER_NODES; i++) {
-    if (nodeConnections[node][i] >= 0) {
-      for (int j = 0; j < NUMBER_OF_RIPPLES; j++) {
-        if (ripples[j].state == STATE_DEAD) {
-          ripples[j].start(
-            node,
-            i,
-            strip.ColorHSV(baseColor + (0xFFFF / 6) * i, 255, 255),
-            .8,
-            8000,
-            behavior);
-          break;
-        }
-      }
-    }
-  }
-}
-
-void renderContour(int node){
-
-//  int node = cubeNodes[random(numberOfCubeNodes)];
-  unsigned int baseColor = random(0xFFFF);
-
-  rippleBehavior behavior;
-
-  for (int i = 0; i < SIDES_PER_NODES; i++) {
-    if (nodeConnections[node][i] >= 0) {
-      if ( i < 3){
-        behavior = BEHAVIOR_ALWAYS_RIGHT;
-      }
-      else{
-        behavior = BEHAVIOR_ALWAYS_LEFT;
-      }
-      for (int j = 0; j < NUMBER_OF_RIPPLES; j++) {
-        if (ripples[j].state == STATE_DEAD) {
-          ripples[j].start(
-            node,
-            i,
-            strip.ColorHSV(baseColor + (0xFFFF / 6) * i, 255, 255),
-            .8,
-            8000,
-            behavior);
-          break;
-        }
-      }
-    }
-  }
-}
-
-void renderUnstoppableSnake(int startingNode){
-//  int node = cubeNodes[random(numberOfCubeNodes)];
-  unsigned int baseColor = random(0xFFFF);
-  unsigned int randStartingNode = random(5);
-
-  rippleBehavior behavior = BEHAVIOR_ANGRY;
-
-  for (int i = 0; i < SIDES_PER_NODES; i++) {
-    if (nodeConnections[startingNode][(randStartingNode+i)%5] >= 0) {
-      for (int j = 0; j < NUMBER_OF_RIPPLES; j++) {
-        if (ripples[j].state == STATE_DEAD) {
-          ripples[j].start(
-            startingNode,
-            (randStartingNode+i)%5,
-            strip.ColorHSV(baseColor + (0xFFFF / 6) * i, 255, 255),
-            .8,
-            15000,
-            behavior);
-          return;
-        }
-      }
-    }
-  }
 }
