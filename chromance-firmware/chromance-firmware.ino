@@ -16,6 +16,7 @@
 #include <ArduinoOTA.h>
 #include "mapping.h"
 #include "ripple.h"
+#include "index.h"
 
 #define HOSTNAME "ESP8266-OTA-" ///< Hostname. The setup function adds the Chip ID at the end.
 #define NUMBER_OF_RIPPLES 30
@@ -40,36 +41,36 @@ float decay = 0.97;  // Multiply all LED's by this amount each tick to create fa
 
 // These ripples are endlessly reused so we don't need to do any memory management
 Ripple ripples[NUMBER_OF_RIPPLES] = {
-  Ripple(0),
-  Ripple(1),
-  Ripple(2),
-  Ripple(3),
-  Ripple(4),
-  Ripple(5),
-  Ripple(6),
-  Ripple(7),
-  Ripple(8),
-  Ripple(9),
-  Ripple(10),
-  Ripple(11),
-  Ripple(12),
-  Ripple(13),
-  Ripple(14),
-  Ripple(15),
-  Ripple(16),
-  Ripple(17),
-  Ripple(18),
-  Ripple(19),
-  Ripple(20),
-  Ripple(21),
-  Ripple(22),
-  Ripple(23),
-  Ripple(24),
-  Ripple(25),
-  Ripple(26),
-  Ripple(27),
-  Ripple(28),
-  Ripple(29)
+    Ripple(0),
+    Ripple(1),
+    Ripple(2),
+    Ripple(3),
+    Ripple(4),
+    Ripple(5),
+    Ripple(6),
+    Ripple(7),
+    Ripple(8),
+    Ripple(9),
+    Ripple(10),
+    Ripple(11),
+    Ripple(12),
+    Ripple(13),
+    Ripple(14),
+    Ripple(15),
+    Ripple(16),
+    Ripple(17),
+    Ripple(18),
+    Ripple(19),
+    Ripple(20),
+    Ripple(21),
+    Ripple(22),
+    Ripple(23),
+    Ripple(24),
+    Ripple(25),
+    Ripple(26),
+    Ripple(27),
+    Ripple(28),
+    Ripple(29)
 };
 
 
@@ -95,7 +96,7 @@ unsigned long lastAutoPulseChange;
 #define simulatedEdaVariance 10000
 unsigned long nextSimulatedHeartbeat;
 unsigned long nextSimulatedEda;
-
+int currentMode = 0;
 
 void renderCube(int node);
 void renderUnstoppableSnake(int startingNode);
@@ -107,27 +108,32 @@ void chromanceProcess(void);
 void processUDP(void);
 
 ESP8266WebServer server(80);
+String page = MAIN_page;
 
 void handleRoot() {
-  String header;
-  header += "  <!DOCTYPE html>    ";
-  header += "<html lang = \"en\">    ";
-  header += "<head>    ";
-  header += "<title>This is a Bootstrap CDN example</title>    ";
-  header += "<meta name = \"viewport\" content = \"width = device-width, initial-scale=1\">";
-  header += "  <link rel = \"stylesheet\" href  = \"https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css\">";
-  header += "</head>";
-  header += "<body>";
-  header += "<div class = \"container\">";
-  header += "<h1 align = \"center\"> Leds Controller</h1>";
-  header += "<p>Write your text here..</p>";
-  header += "</div>";
-  header += "  <script src = \"https://ajax.googleapis.com/ajax/libs/jquery/1.12.0/jquery.min.js\"></script>    ";
-  header += "  <script src = \"https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/js/bootstrap.min.js\"></script>    ";
-  header += "</body>";
-  header += "</html> ";
-  server.send(200, "text/html", header);
 
+    server.send(200, "text/html", page);
+}
+
+void setCurrentMode(int mode){
+    currentMode = mode;
+}
+
+void setUDPMode(){
+    setCurrentMode(1);
+    clearLeds();
+    server.send(200, "text/html", page);
+}
+
+void setChromanceMode(){
+    setCurrentMode(0);
+    clearLeds();
+    server.send(200, "text/html", page);
+}
+
+void clearLeds(){
+    memset(ledColors,0, NUMBER_OF_SEGMENTS*LEDS_PER_SEGMENTS*3);
+    strip.clear();
 }
 
 void handleNotFound() {
@@ -184,6 +190,8 @@ void setupOTA(){
 void setupHTTPServer(){
     server.on("/", handleRoot);
 
+    server.on("/mode/chromance", setChromanceMode);
+    server.on("/mode/udp", setUDPMode);
     server.on("/inline", []() {
         server.send(200, "text/plain", "this works as well");
     });
@@ -260,9 +268,12 @@ void loop() {
     ArduinoOTA.handle();
     server.handleClient();
 
-    processUDP();
 
-    chromanceProcess();
+    if ( currentMode == 0 ){
+        chromanceProcess();
+    }else{
+        processUDP();
+    }
 
     //
     for (uint8_t segment = 0; segment < NUMBER_OF_SEGMENTS; segment++) {
@@ -295,29 +306,36 @@ void processUDP(){
 
         // read the packet into packetBufffer
         int n = Udp.read(packetBuffer, UDP_TX_PACKET_MAX_SIZE);
-        packetBuffer[n] = 0;
-        switch (packetBuffer[0]){
-
-            case 's':
-                renderStarburst();
-                break;
-            case 'c':
-                renderCube(random(numberOfCubeNodes));
-                break;
-            case 'o':
-                renderContour(1);
-                break;
-            case 't':
-                test();
-                break;
+        
+        
+        if (n >= LEDS_PER_SEGMENTS*NUMBER_OF_SEGMENTS*3){
+            memcpy(ledColors, packetBuffer, LEDS_PER_SEGMENTS*NUMBER_OF_SEGMENTS*3);
         }
-        Serial.println("Contents:");
-        Serial.println(packetBuffer);
+        else{
+            packetBuffer[n] = 0;
+            switch (packetBuffer[0]){
+
+                case 's':
+                    renderStarburst();
+                    break;
+                case 'c':
+                    renderCube(random(numberOfCubeNodes));
+                    break;
+                case 'o':
+                    renderContour(1);
+                    break;
+                case 't':
+                    test();
+                    break;
+            }
+        }
+        // Serial.println("Contents:");
+        // Serial.println(packetBuffer);
 
         // send a reply, to the IP address and port that sent us the packet we received
-        Udp.beginPacket(Udp.remoteIP(), Udp.remotePort());
-        Udp.write(ReplyBuffer);
-        Udp.endPacket();
+        // Udp.beginPacket(Udp.remoteIP(), Udp.remotePort());
+        // Udp.write(ReplyBuffer);
+        // Udp.endPacket();
     }
 }
 
@@ -338,7 +356,6 @@ void chromanceProcess(){
         ripples[i].advance(ledColors);
     }
 
-    // When biometric data is unavailable, visualize at random
     if (millis() - lastRandomPulse >= random(2000,6000)) {
 
         // renderTriburst();
@@ -460,7 +477,7 @@ void renderStarburst(){
     //  int node = cubeNodes[random(numberOfCubeNodes)];
     unsigned int startingNode = starburstNode;
 
-    rippleBehavior behavior = BEHAVIOR_WEAK;
+    rippleBehavior behavior = BEHAVIOR_FEISTY;
     uint32_t color = getRandomColor();
     for (int i = 0; i < SIDES_PER_NODES; i++) {
         if (nodeConnections[startingNode][i] >= 0) {
@@ -539,7 +556,7 @@ void test(){
 uint32_t getRandomColor()
 {
   uint16_t color = random(0x7FFF,0xFFFF);
-  return strip.ColorHSV(color, random(180,255), random(100,255));
+  return strip.ColorHSV(color, random(200,255), random(100,255));
 }
 
 float getSpeed(){
