@@ -1,2 +1,16 @@
 
 *.log
+*.o
+*.d
+*.bin
+*.elf
+*.map
+*.ld
+*.cache
+*.a
+**/.vscode/
+**/output
+
+
+
+
