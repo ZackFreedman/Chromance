@@ -17,6 +17,8 @@
 #include "mapping.h"
 #include "ripple.h"
 #include "index.h"
+#include <Stream.h>
+#include "debugUdp.h"
 
 #define HOSTNAME "ESP8266-OTA-" ///< Hostname. The setup function adds the Chip ID at the end.
 #define NUMBER_OF_RIPPLES 30
@@ -30,7 +32,7 @@ const int port = 23;
 #define MAX_SRV_CLIENTS 2
 
 unsigned int localPort = 8888;      // local port to listen on
-
+unsigned int debugPort = 8000;      // local port to listen on
 
 WiFiUDP Udp;
 
@@ -39,6 +41,8 @@ Adafruit_NeoPixel strip(NUM_OF_PIXELS, D4, NEO_GRB + NEO_KHZ800);
 uint8_t ledColors[NUMBER_OF_SEGMENTS][LEDS_PER_SEGMENTS][3];  // LED buffer - each ripple writes to this, then we write this to the strips
 float decay = 0.97;  // Multiply all LED's by this amount each tick to create fancy fading tails
 
+uint16_t g_hue = 40000;
+uint32_t g_color;
 // These ripples are endlessly reused so we don't need to do any memory management
 Ripple ripples[NUMBER_OF_RIPPLES] = {
     Ripple(0),
@@ -106,12 +110,17 @@ void renderStarburst(void);
 // Process the original chromance animation
 void chromanceProcess(void);
 void processUDP(void);
+void setFixedColor(uint32_t color);
 
 ESP8266WebServer server(80);
+debugUdp dbg(8000);
+
 String page = MAIN_page;
 
-void handleRoot() {
+// Handle Web Requests
 
+void handleRoot() {
+    dbg.print("Page opened");
     server.send(200, "text/html", page);
 }
 
@@ -121,20 +130,18 @@ void setCurrentMode(int mode){
 
 void setUDPMode(){
     setCurrentMode(1);
+    dbg.println("Setting to UDP listener ");
     clearLeds();
     server.send(200, "text/html", page);
 }
 
 void setChromanceMode(){
     setCurrentMode(0);
+    dbg.println("Setting to chromance mode ");
     clearLeds();
     server.send(200, "text/html", page);
 }
 
-void clearLeds(){
-    memset(ledColors,0, NUMBER_OF_SEGMENTS*LEDS_PER_SEGMENTS*3);
-    strip.clear();
-}
 
 void handleNotFound() {
     // digitalWrite(led, 1);
@@ -167,21 +174,21 @@ void setupOTA(){
         type = "filesystem";
 
         // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
-        Serial.println("Start updating " + type);
+        dbg.println("Start updating " + type);
     });
     ArduinoOTA.onEnd([]() {
-        Serial.println("\nEnd");
+        dbg.println("\nEnd");
     });
     ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-        Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+        dbg.printf("Progress: %u%%\r", (progress / (total / 100)));
     });
     ArduinoOTA.onError([](ota_error_t error) {
-        Serial.printf("Error[%u]: ", error);
-        if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
-        else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
-        else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
-        else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
-        else if (error == OTA_END_ERROR) Serial.println("End Failed");
+        dbg.printf("Error[%u]: ", error);
+        if (error == OTA_AUTH_ERROR) dbg.println("Auth Failed");
+        else if (error == OTA_BEGIN_ERROR) dbg.println("Begin Failed");
+        else if (error == OTA_CONNECT_ERROR) dbg.println("Connect Failed");
+        else if (error == OTA_RECEIVE_ERROR) dbg.println("Receive Failed");
+        else if (error == OTA_END_ERROR) dbg.println("End Failed");
     });
 
     ArduinoOTA.begin();
@@ -190,31 +197,20 @@ void setupOTA(){
 void setupHTTPServer(){
     server.on("/", handleRoot);
 
+    server.on("/mode/set_hue", set_hue);
     server.on("/mode/chromance", setChromanceMode);
     server.on("/mode/udp", setUDPMode);
     server.on("/inline", []() {
         server.send(200, "text/plain", "this works as well");
     });
 
-    server.on("/gif", []() {
-        static const uint8_t gif[] PROGMEM = {
-        0x47, 0x49, 0x46, 0x38, 0x37, 0x61, 0x10, 0x00, 0x10, 0x00, 0x80, 0x01,
-        0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0x2c, 0x00, 0x00, 0x00, 0x00,
-        0x10, 0x00, 0x10, 0x00, 0x00, 0x02, 0x19, 0x8c, 0x8f, 0xa9, 0xcb, 0x9d,
-        0x00, 0x5f, 0x74, 0xb4, 0x56, 0xb0, 0xb0, 0xd2, 0xf2, 0x35, 0x1e, 0x4c,
-        0x0c, 0x24, 0x5a, 0xe6, 0x89, 0xa6, 0x4d, 0x01, 0x00, 0x3b
-        };
-        char gif_colored[sizeof(gif)];
-        memcpy_P(gif_colored, gif, sizeof(gif));
-        // Set the background to a random set of colors
-        gif_colored[16] = millis() % 256;
-        gif_colored[17] = millis() % 256;
-        gif_colored[18] = millis() % 256;
-        server.send(200, "image/gif", gif_colored, sizeof(gif_colored));
-    });
-
     server.onNotFound(handleNotFound);
     server.begin();
+}
+
+void clearLeds(){
+    memset(ledColors,0, NUMBER_OF_SEGMENTS*LEDS_PER_SEGMENTS*3);
+    strip.clear();
 }
 
 // Main setup function
@@ -234,9 +230,8 @@ void setup() {
     hostname += String(ESP.getChipId(), HEX);
     WiFi.hostname(hostname);
 
-    // Print hostname.
-    Serial.println("Hostname: " + hostname);
-    //Serial.println(WiFi.hostname());
+
+    //dbg.println(WiFi.hostname());
 
     
     while (WiFi.waitForConnectResult() != WL_CONNECTED) {
@@ -244,19 +239,23 @@ void setup() {
         delay(5000);
         ESP.restart();
     }
+    Udp.begin(localPort);
 
-    Serial.print("WiFi connected, IP = ");
-    Serial.println(WiFi.localIP());
+    dbg.write("Online");
+    // Print hostname.
+    dbg.println("Hostname: " + hostname);
+    dbg.print("WiFi connected, IP = ");
+    dbg.println(WiFi.localIP());
 
     setupOTA();
 
-    Serial.println("Ready for WiFi OTA updates");
-    Serial.print("IP address: ");
-    Serial.println(WiFi.localIP());
+    dbg.println("Ready for WiFi OTA updates");
+    dbg.print("IP address: ");
+    dbg.println(WiFi.localIP());
 
-    Udp.begin(localPort);
 
     setupHTTPServer();
+    setFixedColor(14230237);
 }
 
 void loop() {
@@ -269,25 +268,39 @@ void loop() {
     server.handleClient();
 
 
-    if ( currentMode == 0 ){
-        chromanceProcess();
-    }else{
-        processUDP();
+    // if ( currentMode == 0 ){
+    //     chromanceProcess();
+    // }else{
+    //     processUDP();
+    // }
+
+    // //
+    // for (uint8_t segment = 0; segment < NUMBER_OF_SEGMENTS; segment++) {
+    //     for (uint8_t fromBottom = 0; fromBottom < LEDS_PER_SEGMENTS; fromBottom++) {
+
+    //         uint16_t led = round(fmap(fromBottom,0, (LEDS_PER_SEGMENTS-1),ledAssignments[segment][2], ledAssignments[segment][1]));
+    //         strip.setPixelColor(led, ledColors[segment][fromBottom][0], ledColors[segment][fromBottom][1],ledColors[segment][fromBottom][2]);
+    //     }
+    // }
+    // // Update LEDS !
+    // strip.show();
+
+}
+
+
+
+void setFixedColor(uint32_t color){
+
+    g_color  = color;
+    uint8_t r = (g_color & 0xff0000 ) >> 16;
+    uint8_t g = (g_color & 0x00ff00 ) >> 8;
+    uint8_t b = (g_color & 0x0000ff ) >> 0;
+
+    for (int i = 0; i < NUM_OF_PIXELS; i++) {
+        strip.setPixelColor(i, r,g,b);
     }
-
-    //
-    for (uint8_t segment = 0; segment < NUMBER_OF_SEGMENTS; segment++) {
-        for (uint8_t fromBottom = 0; fromBottom < LEDS_PER_SEGMENTS; fromBottom++) {
-
-            uint16_t led = round(fmap(fromBottom,0, (LEDS_PER_SEGMENTS-1),ledAssignments[segment][2], ledAssignments[segment][1]));
-            strip.setPixelColor(led, ledColors[segment][fromBottom][0], ledColors[segment][fromBottom][1],ledColors[segment][fromBottom][2]);
-
-        }
-    }
-
     // Update LEDS !
     strip.show();
-
 }
 
 void processUDP(){
@@ -298,7 +311,7 @@ void processUDP(){
       // if there's data available, read a packet
     int packetSize = Udp.parsePacket();
     if (packetSize) {
-        Serial.printf("Received packet of size %d from %s:%d\n    (to %s:%d, free heap = %d B)\n",
+        dbg.printf("Received packet of size %d from %s:%d\n    (to %s:%d, free heap = %d B)\n",
                         packetSize,
                         Udp.remoteIP().toString().c_str(), Udp.remotePort(),
                         Udp.destinationIP().toString().c_str(), Udp.localPort(),
@@ -329,8 +342,8 @@ void processUDP(){
                     break;
             }
         }
-        // Serial.println("Contents:");
-        // Serial.println(packetBuffer);
+        // dbg.println("Contents:");
+        // dbg.println(packetBuffer);
 
         // send a reply, to the IP address and port that sent us the packet we received
         // Udp.beginPacket(Udp.remoteIP(), Udp.remotePort());
@@ -359,8 +372,8 @@ void chromanceProcess(){
     if (millis() - lastRandomPulse >= random(2000,6000)) {
 
         // renderTriburst();
-        
         currentAutoPulseType = random(5);
+        dbg.write("Alive");
         switch (currentAutoPulseType) {
         case 0: {
             renderContour(1);
@@ -501,7 +514,7 @@ void renderTriburst(){
     //  int node = cubeNodes[random(numberOfCubeNodes)];
     unsigned int startingNode = triNodes[random(numberOfTriNodes)];;
 
-    rippleBehavior behavior = BEHAVIOR_COUCH_POTATO;
+    rippleBehavior behavior = BEHAVIOR_ANGRY;
     uint8_t rippleCnt = 0;
     int i=0;
     
@@ -555,13 +568,34 @@ void test(){
 
 uint32_t getRandomColor()
 {
-  uint16_t color = random(0x7FFF,0xFFFF);
-  return strip.ColorHSV(color, random(200,255), random(100,255));
+//   uint16_t color = secureRandom(765,1530);
+    return strip.ColorHSV(g_hue, random(200,255), random(100,255));
 }
 
 float getSpeed(){
-  return random(500,800)/1000.0;
+    return random(500,800)/1000.0;
   // return 0.5;
+}
+
+void set_hue(){
+    
+    if (server.args() > 0){
+        for (uint8_t i = 0; i < server.args(); i++) {
+                if (server.argName(i) == "hue"){
+                    String hue_arg = server.arg(i);
+                    
+                    if (hue_arg.charAt(0) == '#'){
+                        hue_arg.setCharAt(0,'0');
+                    }
+                    setFixedColor(strtol(hue_arg.c_str(), 0, 16));
+                    Serial.println("Setting hue to : ");
+                    Serial.print(strtol(hue_arg.c_str(), 0, 16));
+                }
+                Serial.println("Arg : ");
+                Serial.print(server.arg(i));
+                server.send(200, "text/plain", "Setting hue to " + server.arg(i));
+            }
+    }   
 }
 
 void testStrip(){
@@ -570,7 +604,7 @@ void testStrip(){
 
   //  strip.setPixelColor(LEDS_PER_SEGMENTS*(i-1), 0,0,0);
   //  strip.setPixelColor((LEDS_PER_SEGMENTS*(i-1))+1, 0,0,0);
-  //  strip.setPixelColor((LEDS_PER_SEGMENTS*(i-1))+2, 0,0,0);
+  //  stfgnvb nrip.setPixelColor((LEDS_PER_SEGMENTS*(i-1))+2, 0,0,0);
   //  strip.setPixelColor((LEDS_PER_SEGMENTS*(i-1))+3, 0,0,0);
   //  strip.setPixelColor((LEDS_PER_SEGMENTS*(i-1))+4, 0,0,0);
   //  strip.setPixelColor((LEDS_PER_SEGMENTS*(i-1))+5, 0,0,0);
