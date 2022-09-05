@@ -24,7 +24,7 @@
 // -1 means nothing connected on that side
 // First node is the upper left one, they are numbered from left to right 1 row at the time
 // The value is the connected segment number
-int nodeConnections[NUMBER_OF_NODES][SIDES_PER_NODES] = {
+const int nodeConnections[NUMBER_OF_NODES][SIDES_PER_NODES] = {
   {-1, -1, 2, -1, 3, -1},
   {-1, -1, 20, -1, 19, -1},
   {-1, -1, 22, -1, 21, -1},
@@ -133,7 +133,7 @@ int nodeConnections[NUMBER_OF_NODES][SIDES_PER_NODES] = {
 */
 // First member: Node closer to ceiling
 // Second: Node closer to floor
-int segmentConnections[NUMBER_OF_SEGMENTS][SIDES_PER_SEGMENT] = {
+const int segmentConnections[NUMBER_OF_SEGMENTS][SIDES_PER_SEGMENT] = {
   {11, 15},
   {4, 11},
   {0, 4},
@@ -177,7 +177,7 @@ int segmentConnections[NUMBER_OF_SEGMENTS][SIDES_PER_SEGMENT] = {
 // First member: Strip number
 // Second: LED index closer to ceiling
 // Third: LED index closer to floor
-int ledAssignments[NUMBER_OF_SEGMENTS][3] = {
+const int ledAssignments[NUMBER_OF_SEGMENTS][3] = {
   {0, headof(0), tailof(0)},
   {0, headof(1), tailof(1)},
   {0, headof(2), tailof(2)},
@@ -220,18 +220,18 @@ int ledAssignments[NUMBER_OF_SEGMENTS][3] = {
 
 // Border nodes are on the very edge of the network.
 // Ripples fired here don't look very impressive.
-int numberOfBorderNodes = 13;
-int borderNodes[] = {0, 1, 2, 3, 6, 10, 13, 14, 16, 19, 21 , 22 , 23};
+const int numberOfBorderNodes = 13;
+const int borderNodes[] = {0, 1, 2, 3, 6, 10, 13, 14, 16, 19, 21 , 22 , 23};
 
 // Cube nodes link three equiangular segments
 // Firing ripples that always turn in one direction will draw a cube
-int numberOfCubeNodes = 7;
-int cubeNodes[] = {7, 8, 9, 11, 12, 17, 18};
+const int numberOfCubeNodes = 7;
+const int cubeNodes[] = {7, 8, 9, 11, 12, 17, 18};
 
-int numberOfTriNodes = 13;
-int triNodes[] = {4,5, 7, 8, 9, 11, 12, 14,15,16, 17, 18, 20};
+const int numberOfTriNodes = 13;
+const int triNodes[] = {4,5, 7, 8, 9, 11, 12, 14,15,16, 17, 18, 20};
 
 // Firing ripples that always turn in one direction will draw a starburst
-int starburstNode = 15;
+const int starburstNode = 15;
 
 #endif

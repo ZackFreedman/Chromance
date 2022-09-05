@@ -231,9 +231,6 @@ void setup() {
     WiFi.hostname(hostname);
 
 
-    //dbg.println(WiFi.hostname());
-
-    
     while (WiFi.waitForConnectResult() != WL_CONNECTED) {
         Serial.println("Connection Failed! Rebooting...");
         delay(5000);
@@ -255,7 +252,9 @@ void setup() {
 
 
     setupHTTPServer();
+    // Boot color
     setFixedColor(14230237);
+
 }
 
 void loop() {
@@ -263,34 +262,32 @@ void loop() {
     static int currentLed = 0;
     static unsigned long lastStep = 0;
     
-    
+
     ArduinoOTA.handle();
     server.handleClient();
 
 
-    // if ( currentMode == 0 ){
-    //     chromanceProcess();
-    // }else{
-    //     processUDP();
-    // }
+    if ( currentMode == 0 ){
+        chromanceProcess();
+    }else{
+        processUDP();
+    }
 
-    // //
-    // for (uint8_t segment = 0; segment < NUMBER_OF_SEGMENTS; segment++) {
-    //     for (uint8_t fromBottom = 0; fromBottom < LEDS_PER_SEGMENTS; fromBottom++) {
+    //
+    for (uint8_t segment = 0; segment < NUMBER_OF_SEGMENTS; segment++) {
+        for (uint8_t fromBottom = 0; fromBottom < LEDS_PER_SEGMENTS; fromBottom++) {
 
-    //         uint16_t led = round(fmap(fromBottom,0, (LEDS_PER_SEGMENTS-1),ledAssignments[segment][2], ledAssignments[segment][1]));
-    //         strip.setPixelColor(led, ledColors[segment][fromBottom][0], ledColors[segment][fromBottom][1],ledColors[segment][fromBottom][2]);
-    //     }
-    // }
-    // // Update LEDS !
-    // strip.show();
-
+            uint16_t led = round(fmap(fromBottom,0, (LEDS_PER_SEGMENTS-1),ledAssignments[segment][2], ledAssignments[segment][1]));
+            strip.setPixelColor(led, ledColors[segment][fromBottom][0], ledColors[segment][fromBottom][1],ledColors[segment][fromBottom][2]);
+        }
+    }
+    // Update LEDS !
+    strip.show();
 }
 
 
 
 void setFixedColor(uint32_t color){
-
     g_color  = color;
     uint8_t r = (g_color & 0xff0000 ) >> 16;
     uint8_t g = (g_color & 0x00ff00 ) >> 8;
@@ -356,6 +353,7 @@ void chromanceProcess(){
     static unsigned long lastRandomPulse;
     
     // Fade all dots to create trails
+    // Doing so by fading all the framebuffer manually
     for (int seg = 0; seg < NUMBER_OF_SEGMENTS; seg++) {
         for (int led = 0; led < LEDS_PER_SEGMENTS; led++) {
             for (int i = 0; i < 3; i++) {
@@ -369,40 +367,36 @@ void chromanceProcess(){
         ripples[i].advance(ledColors);
     }
 
+    // Fire up a new ripple every 2-6 secondes
     if (millis() - lastRandomPulse >= random(2000,6000)) {
-
         // renderTriburst();
         currentAutoPulseType = random(5);
         dbg.write("Alive");
         switch (currentAutoPulseType) {
-        case 0: {
-            renderContour(1);
-            break;
+            case 0: {
+                renderContour(1);
+                break;
+            }
+            case 1: {
+                renderUnstoppableSnake(random(0,NUMBER_OF_NODES));
+                break;
+            }
+            case 2: {
+                renderCube(random(numberOfCubeNodes));
+                break;
+            }
+            case 3: {
+                renderStarburst();
+                break;
+            }
+            case 4: {
+                renderTriburst();
+                break;
             }
 
-        case 1: {
-            renderUnstoppableSnake(random(0,NUMBER_OF_NODES));
-            break;
-            }
-
-        case 2: {
-            renderCube(random(numberOfCubeNodes));
-            break;
-            }
-
-        case 3: {
-            renderStarburst();
-            break;
-            }
-        case 4: {
-            renderTriburst();
-            break;
-            }
-
-        default:
-            break;
+            default:
+                break;
         }
-        
         lastRandomPulse = millis(); 
     }
 }
