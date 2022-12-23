@@ -20,6 +20,14 @@ enum rippleState {
   travelingDownwards
 };
 
+enum rippleBehavior {
+  weaksauce = 0,
+  feisty = 1,
+  angry = 2,
+  alwaysTurnsRight = 3,
+  alwaysTurnsLeft = 4
+};
+
 float fmap(float x, float in_min, float in_max, float out_min, float out_max) {
   return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
@@ -41,11 +49,11 @@ class Ripple {
     int position[2];
 
     // Place the Ripple in a node
-    void start(byte n, byte d, unsigned long c, float s, unsigned long l, byte a) {
+    void start(byte n, byte d, unsigned long c, float s, unsigned long l, byte b) {
       color = c;
       speed = s;
       lifespan = l;
-      aggressiveness = a;
+      behavior = b;
 
       birthday = millis();
       pressure = 0;
@@ -95,14 +103,10 @@ class Ripple {
                 Serial.print("  Picking direction out of node ");
                 Serial.print(position[0]);
                 Serial.print(" with agr. ");
-                Serial.println(aggressiveness);
+                Serial.println(behavior);
 #endif
 
                 int newDirection = -1;
-
-                // The more aggressive a ripple, the tighter turns it wants to make.
-                // If there aren't any segments it can turn to, we need to adjust its aggressiveness.
-                byte anger = aggressiveness;
 
                 int sharpLeft = (position[1] + 1) % 6;
                 int wideLeft = (position[1] + 2) % 6;
@@ -110,88 +114,122 @@ class Ripple {
                 int wideRight = (position[1] + 4) % 6;
                 int sharpRight = (position[1] + 5) % 6;
 
-                while (newDirection < 0) {
-                  if (anger == 0) {
-                    int forwardConnection = nodeConnections[position[0]][forward];
+                if (behavior <= 2) {  // Semi-random aggressive turn mode
+                  // The more aggressive a ripple, the tighter turns it wants to make.
+                  // If there aren't any segments it can turn to, we need to adjust its behavior.
+                  byte anger = behavior;
 
-                    if (forwardConnection < 0) {
-                      // We can't go straight ahead - we need to take a more aggressive angle
+                  while (newDirection < 0) {
+                    if (anger == 0) {
+                      int forwardConnection = nodeConnections[position[0]][forward];
+
+                      if (forwardConnection < 0) {
+                        // We can't go straight ahead - we need to take a more aggressive angle
 #ifdef DEBUG_ADVANCEMENT
-                      Serial.println("  Can't go straight - picking more agr. path");
+                        Serial.println("  Can't go straight - picking more agr. path");
 #endif
-                      anger++;
+                        anger++;
+                      }
+                      else {
+#ifdef DEBUG_ADVANCEMENT
+                        Serial.println("  Going forward");
+#endif
+                        newDirection = forward;
+                      }
                     }
-                    else {
+
+                    if (anger == 1) {
+                      int leftConnection = nodeConnections[position[0]][wideLeft];
+                      int rightConnection = nodeConnections[position[0]][wideRight];
+
+                      if (leftConnection >= 0 && rightConnection >= 0) {
 #ifdef DEBUG_ADVANCEMENT
-                      Serial.println("  Going forward");
+                        Serial.println("  Turning left or right at random");
 #endif
-                      newDirection = forward;
+                        newDirection = random(2) ? wideLeft : wideRight;
+                      }
+                      else if (leftConnection >= 0) {
+#ifdef DEBUG_ADVANCEMENT
+                        Serial.println("  Can only turn left");
+#endif
+                        newDirection = wideLeft;
+                      }
+                      else if (rightConnection >= 0) {
+#ifdef DEBUG_ADVANCEMENT
+                        Serial.println("  Can only turn right");
+#endif
+                        newDirection = wideRight;
+                      }
+                      else {
+#ifdef DEBUG_ADVANCEMENT
+                        Serial.println("  Can't make wide turn - picking more agr. path");
+#endif
+                        anger++;  // Can't take shallow turn - must become more aggressive
+                      }
+                    }
+
+                    if (anger == 2) {
+                      int leftConnection = nodeConnections[position[0]][sharpLeft];
+                      int rightConnection = nodeConnections[position[0]][sharpRight];
+
+                      if (leftConnection >= 0 && rightConnection >= 0) {
+#ifdef DEBUG_ADVANCEMENT
+                        Serial.println("  Turning left or right at random");
+#endif
+                        newDirection = random(2) ? sharpLeft : sharpRight;
+                      }
+                      else if (leftConnection >= 0) {
+#ifdef DEBUG_ADVANCEMENT
+                        Serial.println("  Can only turn left");
+#endif
+                        newDirection = sharpLeft;
+                      }
+                      else if (rightConnection >= 0) {
+#ifdef DEBUG_ADVANCEMENT
+                        Serial.println("  Can only turn right");
+#endif
+                        newDirection = sharpRight;
+                      }
+                      else {
+#ifdef DEBUG_ADVANCEMENT
+                        Serial.println("  Can't make tight turn - picking less agr. path");
+#endif
+                        anger--;  // Can't take tight turn - must become less aggressive
+                      }
+                    }
+
+                    // Note that this can't handle some circumstances,
+                    // like a node with segments in nothing but the 0 and 3 positions.
+                    // Good thing we don't have any of those!
+                  }
+                }
+                else if (behavior == alwaysTurnsRight) {
+                  for (int i = 1; i < 6; i++) {
+                    int possibleDirection = (position[1] + i) % 6;
+
+                    if (nodeConnections[position[0]][possibleDirection] >= 0) {
+                      newDirection = possibleDirection;
+                      break;
                     }
                   }
 
-                  if (anger == 1) {
-                    int leftConnection = nodeConnections[position[0]][wideLeft];
-                    int rightConnection = nodeConnections[position[0]][wideRight];
+#ifdef DEBUG_ADVANCEMENT
+                  Serial.println("  Turning as rightward as possible");
+#endif
+                }
+                else if (behavior == alwaysTurnsLeft) {
+                  for (int i = 5; i >= 1; i--) {
+                    int possibleDirection = (position[1] + i) % 6;
 
-                    if (leftConnection >= 0 && rightConnection >= 0) {
-#ifdef DEBUG_ADVANCEMENT
-                      Serial.println("  Turning left or right at random");
-#endif
-                      newDirection = random(2) ? wideLeft : wideRight;
-                    }
-                    else if (leftConnection >= 0) {
-#ifdef DEBUG_ADVANCEMENT
-                      Serial.println("  Can only turn left");
-#endif
-                      newDirection = wideLeft;
-                    }
-                    else if (rightConnection >= 0) {
-#ifdef DEBUG_ADVANCEMENT
-                      Serial.println("  Can only turn right");
-#endif
-                      newDirection = wideRight;
-                    }
-                    else {
-#ifdef DEBUG_ADVANCEMENT
-                      Serial.println("  Can't make wide turn - picking more agr. path");
-#endif
-                      anger++;  // Can't take shallow turn - must become more aggressive
+                    if (nodeConnections[position[0]][possibleDirection] >= 0) {
+                      newDirection = possibleDirection;
+                      break;
                     }
                   }
 
-                  if (anger == 2) {
-                    int leftConnection = nodeConnections[position[0]][sharpLeft];
-                    int rightConnection = nodeConnections[position[0]][sharpRight];
-
-                    if (leftConnection >= 0 && rightConnection >= 0) {
 #ifdef DEBUG_ADVANCEMENT
-                      Serial.println("  Turning left or right at random");
+                  Serial.println("  Turning as leftward as possible");
 #endif
-                      newDirection = random(2) ? sharpLeft : sharpRight;
-                    }
-                    else if (leftConnection >= 0) {
-#ifdef DEBUG_ADVANCEMENT
-                      Serial.println("  Can only turn left");
-#endif
-                      newDirection = sharpLeft;
-                    }
-                    else if (rightConnection >= 0) {
-#ifdef DEBUG_ADVANCEMENT
-                      Serial.println("  Can only turn right");
-#endif
-                      newDirection = sharpRight;
-                    }
-                    else {
-#ifdef DEBUG_ADVANCEMENT
-                      Serial.println("  Can't make tight turn - picking less agr. path");
-#endif
-                      anger--;  // Can't take tight turn - must become less aggressive
-                    }
-                  }
-
-                  // Note that this can't handle some circumstances,
-                  // like a node with segments in nothing but the 0 and 3 positions.
-                  // Good thing we don't have any of those!
                 }
 
 #ifdef DEBUG_ADVANCEMENT
@@ -341,7 +379,7 @@ class Ripple {
        1: Can take 60-degree turns
        2: Can take 120-degree turns
     */
-    byte aggressiveness;
+    byte behavior;
 
     bool justStarted = false;
 

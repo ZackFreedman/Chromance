@@ -52,7 +52,7 @@ Adafruit_NeoPixel strips[4] = {strip0, strip1, strip2, strip3};
 #endif
 
 byte ledColors[40][14][3];  // LED buffer - each ripple writes to this, then we write this to the strips
-float decay = 0.95;  // Multiply all LED's by this amount each tick to create fancy fading tails
+float decay = 0.97;  // Multiply all LED's by this amount each tick to create fancy fading tails
 
 
 // These ripples are endlessly reused so we don't need to do any memory management
@@ -103,7 +103,7 @@ unsigned long lastHeartbeat;  // Track last heartbeat so we can detect noise/dis
 #define highTemperature 37.0  // Really fired up
 float lastKnownTemperature = (lowTemperature + highTemperature) / 2.0;  // Carries skin temperature from temperature callback to IR callback
 
-// EDA code was too unreliable and was cut. 
+// EDA code was too unreliable and was cut.
 // TODO: Rebuild EDA code
 
 // Gyroscope is used to reject data if you're moving too much
@@ -114,11 +114,19 @@ float gyroX, gyroY, gyroZ;
 // If you don't have an EmotiBit or don't feel like wearing it, that's OK
 // We'll fire automatic pulses
 #define randomPulsesEnabled true  // Fire random rainbow pulses from random nodes
+#define cubePulsesEnabled true  // Draw cubes at random nodes
+#define starburstPulsesEnabled true  // Draw starbursts
 #define simulatedBiometricsEnabled false  // Simulate heartbeat and EDA ripples
 
 #define autoPulseTimeout 5000  // If no heartbeat is received in this many ms, begin firing random/simulated pulses
-#define randomPulseTime 1000  // Fire a random pulse every (this many) ms
+#define randomPulseTime 2000  // Fire a random pulse every (this many) ms
 unsigned long lastRandomPulse;
+byte lastAutoPulseNode = 255;
+
+byte numberOfAutoPulseTypes = randomPulsesEnabled + cubePulsesEnabled + starburstPulsesEnabled;
+byte currentAutoPulseType = 255;
+#define autoPulseChangeTime 30000
+unsigned long lastAutoPulseChange;
 
 #define simulatedHeartbeatBaseTime 600  // Fire a simulated heartbeat pulse after at least this many ms
 #define simulatedHeartbeatVariance 200  // Add random jitter to simulated heartbeat
@@ -291,39 +299,140 @@ void loop() {
 
   if (millis() - lastHeartbeat >= autoPulseTimeout) {
     // When biometric data is unavailable, visualize at random
-    if (randomPulsesEnabled && millis() - lastRandomPulse >= randomPulseTime) {
-      int node = 0;
-      bool foundStartingNode = false;
-      while (!foundStartingNode) {
-        node = random(25);
-        foundStartingNode = true;
-        for (int i = 0; i < numberOfBorderNodes; i++) {
-          // Don't fire a pulse on one of the outer nodes - it looks boring
-          if (node == borderNodes[i])
-            foundStartingNode = false;
-        }
-      }
-
+    if (numberOfAutoPulseTypes && millis() - lastRandomPulse >= randomPulseTime) {
       unsigned int baseColor = random(0xFFFF);
 
-      for (int i = 0; i < 6; i++) {
-        if (nodeConnections[node][i] >= 0) {
-          for (int j = 0; j < numberOfRipples; j++) {
-            if (ripples[j].state == dead) {
-              ripples[j].start(
-                node,
-                i,
-                strip0.ColorHSV(baseColor + (0xFFFF / 6) * i, 255, 255),
-                float(random(100)) / 100.0 * .2 + .5,
-                3000,
-                1);
+      if (currentAutoPulseType == 255 || (numberOfAutoPulseTypes > 1 && millis() - lastAutoPulseChange >= autoPulseChangeTime)) {
+        byte possiblePulse = 255;
+        while (true) {
+          possiblePulse = random(3);
 
+          if (possiblePulse == currentAutoPulseType)
+            continue;
+
+          switch (possiblePulse) {
+            case 0:
+              if (!randomPulsesEnabled)
+                continue;
               break;
-            }
+
+            case 1:
+              if (!cubePulsesEnabled)
+                continue;
+              break;
+
+            case 2:
+              if (!starburstPulsesEnabled)
+                continue;
+              break;
+
+            default:
+              continue;
           }
+
+          currentAutoPulseType = possiblePulse;
+          lastAutoPulseChange = millis();
+          break;
         }
       }
 
+      switch (currentAutoPulseType) {
+        case 0: {
+            int node = 0;
+            bool foundStartingNode = false;
+            while (!foundStartingNode) {
+              node = random(25);
+              foundStartingNode = true;
+              for (int i = 0; i < numberOfBorderNodes; i++) {
+                // Don't fire a pulse on one of the outer nodes - it looks boring
+                if (node == borderNodes[i])
+                  foundStartingNode = false;
+              }
+
+              if (node == lastAutoPulseNode)
+                foundStartingNode = false;
+            }
+
+            lastAutoPulseNode = node;
+
+            for (int i = 0; i < 6; i++) {
+              if (nodeConnections[node][i] >= 0) {
+                for (int j = 0; j < numberOfRipples; j++) {
+                  if (ripples[j].state == dead) {
+                    ripples[j].start(
+                      node,
+                      i,
+//                      strip0.ColorHSV(baseColor + (0xFFFF / 6) * i, 255, 255),
+                      strip0.ColorHSV(baseColor, 255, 255),
+                      float(random(100)) / 100.0 * .2 + .5,
+                      3000,
+                      1);
+
+                    break;
+                  }
+                }
+              }
+            }
+            break;
+          }
+
+        case 1: {
+            int node = cubeNodes[random(numberOfCubeNodes)];
+
+            while (node == lastAutoPulseNode)
+              node = cubeNodes[random(numberOfCubeNodes)];
+
+            lastAutoPulseNode = node;
+
+            byte behavior = random(2) ? alwaysTurnsLeft : alwaysTurnsRight;
+
+            for (int i = 0; i < 6; i++) {
+              if (nodeConnections[node][i] >= 0) {
+                for (int j = 0; j < numberOfRipples; j++) {
+                  if (ripples[j].state == dead) {
+                    ripples[j].start(
+                      node,
+                      i,
+//                      strip0.ColorHSV(baseColor + (0xFFFF / 6) * i, 255, 255),
+                      strip0.ColorHSV(baseColor, 255, 255),
+                      .5,
+                      2000,
+                      behavior);
+
+                    break;
+                  }
+                }
+              }
+            }
+            break;
+          }
+
+        case 2: {
+            byte behavior = random(2) ? alwaysTurnsLeft : alwaysTurnsRight;
+
+            lastAutoPulseNode = starburstNode;
+
+            for (int i = 0; i < 6; i++) {
+              for (int j = 0; j < numberOfRipples; j++) {
+                if (ripples[j].state == dead) {
+                  ripples[j].start(
+                    starburstNode,
+                    i,
+                    strip0.ColorHSV(baseColor + (0xFFFF / 6) * i, 255, 255),
+                    .65,
+                    1500,
+                    behavior);
+
+                  break;
+                }
+              }
+            }
+            break;
+          }
+
+        default:
+          break;
+      }
       lastRandomPulse = millis();
     }
 
@@ -382,6 +491,6 @@ void loop() {
     }
   }
 
-  Serial.print("Benchmark: ");
-  Serial.println(millis() - benchmark);
+  //  Serial.print("Benchmark: ");
+  //  Serial.println(millis() - benchmark);
 }
