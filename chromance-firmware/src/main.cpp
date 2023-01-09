@@ -10,6 +10,8 @@
 // COMMENT OUT IF NOT USING
 // #define USING_EMOTI_BIT_SENSOR
 
+#include <Arduino.h>
+
 #define DOTSTAR 1
 #define NEOPIXEL 2
 // TODO: USER SET
@@ -42,10 +44,19 @@
 #include "mapping.h"
 #include "ripple.h"
 
+void connectToWiFi(const char *ssid, const char *pwd);
+void setupOTA(void);
+
 // TODO: USER SET
 // EDIT WITH YOUR WIFI NETWORK SSID AND PASSWORD
 const char *ssid = "schucreations";
 const char *password = "a9vsesfx";
+
+// CONVERT
+// BLUE = RED
+// GREEN = YELLOW
+// RED = GREEN
+// BLACK = BLUE
 
 // TODO: USER SET
 // Data Pins FILL IN WITH YOUR PIN NUMBERS
@@ -171,6 +182,86 @@ unsigned long lastAutoPulseChange;
 #define simulatedEdaVariance 10000
 unsigned long nextSimulatedHeartbeat;
 unsigned long nextSimulatedEda;
+bool connected = false;
+
+#define HOSTNAME "Chromance"
+
+void setupOTA()
+{
+  String hostname(HOSTNAME);
+  // Start OTA server.
+  ArduinoOTA.setHostname(HOSTNAME);
+  ArduinoOTA.setPassword("esp32password");
+  // Wireless OTA updating? On an ARDUINO?! It's more likely than you think!
+  ArduinoOTA
+      .onStart([]()
+               {
+    String type;
+    if (ArduinoOTA.getCommand() == U_FLASH)
+      type = "sketch";
+    else // U_SPIFFS
+      type = "filesystem";
+
+    // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
+    Serial.println("Start updating " + type); });
+  ArduinoOTA.onEnd([]()
+                   { Serial.println("\nEnd"); });
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total)
+                        { Serial.printf("Progress: %u%%\r", (progress / (total / 100))); });
+  ArduinoOTA.onError([](ota_error_t error)
+                     {
+                       Serial.printf("Error[%u]: ", error);
+                       if (error == OTA_AUTH_ERROR)
+                         Serial.println("Auth Failed");
+                       else if (error == OTA_BEGIN_ERROR)
+                         Serial.println("Begin Failed");
+                       else if (error == OTA_CONNECT_ERROR)
+                         Serial.println("Connect Failed");
+                       else if (error == OTA_RECEIVE_ERROR)
+                         Serial.println("Receive Failed");
+                       else if (error == OTA_END_ERROR)
+                         Serial.println("End Failed"); });
+
+  ArduinoOTA.begin();
+}
+
+void connectToWiFi(const char *ssid, const char *pwd)
+{
+  if (connected == true)
+    return;
+
+  Serial.println("Connecting to WiFi network: " + String(ssid));
+
+  // delete old config
+  WiFi.disconnect(true);
+
+  // Initiate connection
+  WiFi.mode(WIFI_STA);
+  WiFi.config(ip, gateway, subnet);
+  WiFi.begin(ssid, pwd);
+
+  // Set Hostname.
+  WiFi.hostname(HOSTNAME);
+
+  uint8_t counter = 0;
+  Serial.println("Waiting for WIFI connection...");
+  while (WiFi.waitForConnectResult() != WL_CONNECTED)
+  {
+    delay(500);
+    counter++;
+
+    if (counter > 10)
+    {
+      Serial.println("Connection Failed! Rebooting...");
+      ESP.restart();
+    }
+  }
+  Serial.printf("Hostname: %s", HOSTNAME);
+  Serial.print("WiFi connected! IP address: ");
+  Serial.println(WiFi.localIP());
+  setupOTA();
+  connected = true;
+}
 
 void setup()
 {
@@ -185,122 +276,12 @@ void setup()
     strips[i].show();
   }
 
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
-  WiFi.config(ip, gateway, subnet);
-  while (WiFi.waitForConnectResult() != WL_CONNECTED)
-  {
-    Serial.println("Connection Failed! Rebooting...");
-    delay(5000);
-    ESP.restart();
-  }
-
-  Serial.print("WiFi connected, IP = ");
-  Serial.println(WiFi.localIP());
-
-#ifdef USING_EMOTI_BIT_SENSOR
-  // Subscribe to OSC transmissions for important data
-  OscWiFi.subscribe(recv_port, "/EmotiBit/0/EDA", [](const OscMessage &m) { // This weird syntax is a lambda expression (anonymous nameless function)
-    lastKnownTemperature = m.arg<float>(0);
-  });
-
-  OscWiFi.subscribe(recv_port, "/EmotiBit/0/GYRO:X", [](const OscMessage &m)
-                    { gyroX = m.arg<float>(0) * gyroAlpha + gyroX * (1 - gyroAlpha); });
-
-  OscWiFi.subscribe(recv_port, "/EmotiBit/0/GYRO:Y", [](const OscMessage &m)
-                    { gyroY = m.arg<float>(0) * gyroAlpha + gyroY * (1 - gyroAlpha); });
-
-  OscWiFi.subscribe(recv_port, "/EmotiBit/0/GYRO:Z", [](const OscMessage &m)
-                    { gyroZ = m.arg<float>(0) * gyroAlpha + gyroZ * (1 - gyroAlpha); });
-
-  // Heartbeat detection and visualization happens here
-  OscWiFi.subscribe(recv_port, "/EmotiBit/0/PPG:IR", [](const OscMessage &m)
-                    {
-    float reading = m.arg<float>(0);
-    Serial.println(reading);
-
-    int hue = 0;
-
-    //  Ignore heartbeat when finger is wiggling around - it's not accurate
-    float gyroTotal = abs(gyroX) + abs(gyroY) + abs(gyroZ);
-
-    if (gyroTotal < gyroThreshold && lastIrReading >= reading) {
-      // Our hand is sitting still and the reading dropped - let's pulse!
-      Serial.print("> ");
-      Serial.println(highestIrReading - reading);
-      if (highestIrReading - reading >= heartbeatDelta) {
-        if (millis() - lastHeartbeat >= heartbeatLockout) {
-          hue = fmap(lastKnownTemperature, lowTemperature, highTemperature, 0xFFFF, 0);
-          for (int i = 0; i < 6; i++) {
-            if (nodeConnections[15][i] > 0) {
-              bool firedRipple = false;
-              // Find a dead ripple to reuse it
-              for (int j = 0; j < 30; j++) {
-                if (!firedRipple && ripples[j].state == dead) {
-                  ripples[j].start(
-                    15,
-                    i,
-                    strip0.ColorHSV(hue, 255, 255),
-                    float(random(100)) / 100.0 * .2 + .8,
-                    500,
-                    2);
-
-                  firedRipple = true;
-                }
-              }
-            }
-          }
-        }
-
-        lastHeartbeat = millis();
-      }
-    }
-    else {
-      highestIrReading = 0;
-    }
-
-    lastIrReading = reading;
-    if (reading > highestIrReading)
-      highestIrReading = reading; });
-#endif
-
-  ArduinoOTA.setHostname("ESP8266");
-  ArduinoOTA.setPassword("esp8266");
-
-  // Wireless OTA updating? On an ARDUINO?! It's more likely than you think!
-  ArduinoOTA
-      .onStart([]()
-               {
-    String type;
-    if (ArduinoOTA.getCommand() == U_FLASH)
-      type = "sketch";
-    else // U_SPIFFS
-      type = "filesystem";
-
-    // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
-    Serial.println("Start updating " + type); })
-      .onEnd([]()
-             { Serial.println("\nEnd"); })
-      .onProgress([](unsigned int progress, unsigned int total)
-                  { Serial.printf("Progress: %u%%\r", (progress / (total / 100))); })
-      .onError([](ota_error_t error)
-               {
-    Serial.printf("Error[%u]: ", error);
-    if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
-    else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
-    else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
-    else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
-    else if (error == OTA_END_ERROR) Serial.println("End Failed"); });
-
-  ArduinoOTA.begin();
-
-  Serial.println("Ready for WiFi OTA updates");
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
+  connectToWiFi(ssid, password);
 }
 
 void loop()
 {
+
   unsigned long benchmark = millis();
 
 #ifdef USING_EMOTI_BIT_SENSOR
