@@ -8,13 +8,13 @@
 
 // TODO: USER SET
 // COMMENT OUT IF NOT USING
-#define USING_EMOTI_BIT_SENSOR
+// #define USING_EMOTI_BIT_SENSOR
 
 #define DOTSTAR 1
 #define NEOPIXEL 2
 // TODO: USER SET
 // SET TO DOTSTAR OR NEOPIXEL, DEPENDING ON WHAT YOU ARE USING
-#define __LED_TYPE DOTSTAR
+#define __LED_TYPE NEOPIXEL
 
 #if __LED_TYPE == DOTSTAR
 #define USING_DOTSTAR
@@ -44,8 +44,8 @@
 
 // TODO: USER SET
 // EDIT WITH YOUR WIFI NETWORK SSID AND PASSWORD
-const char *ssid = "YourMom";
-const char *password = "is a nice lady";
+const char *ssid = "schucreations";
+const char *password = "a9vsesfx";
 
 // TODO: USER SET
 // Data Pins FILL IN WITH YOUR PIN NUMBERS
