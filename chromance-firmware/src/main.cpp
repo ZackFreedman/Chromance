@@ -8,21 +8,11 @@
 
 // TODO: USER SET
 // COMMENT OUT IF NOT USING
-#define USING_EMOTI_BIT_SENSOR
+// #define USING_EMOTI_BIT_SENSOR
 
-#define DOTSTAR 1
-#define NEOPIXEL 2
-// TODO: USER SET
-// SET TO DOTSTAR OR NEOPIXEL, DEPENDING ON WHAT YOU ARE USING
-#define __LED_TYPE DOTSTAR
+#include <Arduino.h>
 
-#if __LED_TYPE == DOTSTAR
-#define USING_DOTSTAR
-#undef USING_NEOPIXEL
-#elif __LED_TYPE == NEOPIXEL
-#define USING_NEOPIXEL
-#undef USING_DOTSTAR
-#endif
+#include "variables.h"
 
 #ifdef USING_DOTSTAR
 #include <Adafruit_DotStar.h>
@@ -42,55 +32,33 @@
 #include "mapping.h"
 #include "ripple.h"
 
-// TODO: USER SET
-// EDIT WITH YOUR WIFI NETWORK SSID AND PASSWORD
-const char *ssid = "YourMom";
-const char *password = "is a nice lady";
+#include <WiFiManager.h> //https://github.com/tzapu/WiFiManager WiFi Configuration Magic
 
-// TODO: USER SET
-// Data Pins FILL IN WITH YOUR PIN NUMBERS
-const int blueStripDataPin = 33;
-const int greenStripDataPin = 32;
-const int redStripDataPin = 2;
-const int blackStripDataPin = 4;
-
-// TODO: USER SET
-// [DOTSTAR ONLY] Clock Pins  FILL IN WITH YOUR PIN NUMBERS IF USING DOTSTAR
-#ifdef USING_DOTSTAR
-const int blueStripClockPin = 2;
-const int redStripClockPin = 17;
-const int greenStripClockPin = 4;
-const int blackStripClockPin = 18;
-#endif
-
-// WiFi stuff - CHANGE FOR YOUR OWN NETWORK!
-const IPAddress ip(192, 168, 1, 90);      // IP address that THIS DEVICE should request
-const IPAddress gateway(192, 168, 1, 1);  // Your router
-const IPAddress subnet(255, 255, 255, 0); // Your subnet mask (find it from your router's admin panel)
-const int recv_port = 42069;              // Port that OSC data should be sent to (pick one, put same one in EmotiBit's OSC Config XML file)
-
-int lengths[] = {154, 168, 84, 154}; // Strips are different lengths because I am a dumb
+void connectToWiFi(const char *ssid, const char *pwd);
+void setupOTA(void);
+void fade(void);
+void advanceRipple(void);
+void Task1code(void *pvParameters);
 
 #ifdef USING_DOTSTAR
-Adafruit_DotStar strip0(lengths[0], blueStripDataPin, blueStripClockPin, DOTSTAR_BRG);
-Adafruit_DotStar strip1(lengths[1], greenStripDataPin, greenStripClockPin, DOTSTAR_BRG);
-Adafruit_DotStar strip2(lengths[2], redStripDataPin, redStripClockPin, DOTSTAR_BRG);
-Adafruit_DotStar strip3(lengths[3], blackStripDataPin, blackStripClockPin, DOTSTAR_BRG);
+Adafruit_DotStar strip0(BLUE_LENGTH, BLUE_STRIP_DATA_PIN, BLUE_STRIP_CLOCK_PIN, DOTSTAR_BRG);
+Adafruit_DotStar strip1(GREEN_LENGTH, GREEN_STRIP_DATA_PIN, GREEN_STRIP_CLOCK_PIN, DOTSTAR_BRG);
+Adafruit_DotStar strip2(RED_LENGTH, RED_STRIP_DATA_PIN, RED_STRIP_CLOCK_PIN, DOTSTAR_BRG);
+Adafruit_DotStar strip3(BLACK_LENGTH, BLACK_STRIP_DATA_PIN, BLUE_STRIP_CLOCK_PIN, DOTSTAR_BRG);
 
 Adafruit_DotStar strips[4] = {strip0, strip1, strip2, strip3};
 #endif
 
 #ifdef USING_NEOPIXEL
-Adafruit_NeoPixel strip0(lengths[0], blueStripDataPin, NEO_GRB + NEO_KHZ800);
-Adafruit_NeoPixel strip1(lengths[1], greenStripDataPin, NEO_GRB + NEO_KHZ800);
-Adafruit_NeoPixel strip2(lengths[2], redStripDataPin, NEO_GRB + NEO_KHZ800);
-Adafruit_NeoPixel strip3(lengths[3], blackStripDataPin, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel strip0(BLUE_LENGTH, BLUE_STRIP_DATA_PIN, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel strip1(GREEN_LENGTH, GREEN_STRIP_DATA_PIN, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel strip2(RED_LENGTH, RED_STRIP_DATA_PIN, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel strip3(BLACK_LENGTH, BLACK_STRIP_DATA_PIN, NEO_GRB + NEO_KHZ800);
 
-Adafruit_NeoPixel strips[4] = {strip0, strip1, strip2, strip3};
+Adafruit_NeoPixel strips[NUMBER_OF_STRIPS] = {strip0, strip1, strip2, strip3};
 #endif
 
-byte ledColors[40][14][3]; // LED buffer - each ripple writes to this, then we write this to the strips
-float decay = 0.97;        // Multiply all LED's by this amount each tick to create fancy fading tails
+byte ledColors[NUMBER_OF_SEGMENTS][LEDS_PER_SEGMENTS][NUMBER_OF_STRIPS - 1]; // LED buffer - each ripple writes to this, then we write this to the strips
 
 // These ripples are endlessly reused so we don't need to do any memory management
 #define numberOfRipples 30
@@ -148,125 +116,22 @@ float lastKnownTemperature = (lowTemperature + highTemperature) / 2.0; // Carrie
 #define gyroThreshold 300 // Minimum angular velocity total (X+Y+Z) that disqualifies readings
 float gyroX, gyroY, gyroZ;
 
-// If you don't have an EmotiBit or don't feel like wearing it, that's OK
-// We'll fire automatic pulses
-#define randomPulsesEnabled true         // Fire random rainbow pulses from random nodes
-#define cubePulsesEnabled true           // Draw cubes at random nodes
-#define starburstPulsesEnabled true      // Draw starbursts
-#define simulatedBiometricsEnabled false // Simulate heartbeat and EDA ripples
-
-#define autoPulseTimeout 5000 // If no heartbeat is received in this many ms, begin firing random/simulated pulses
-#define randomPulseTime 2000  // Fire a random pulse every (this many) ms
 unsigned long lastRandomPulse;
-byte lastAutoPulseNode = 255;
 
 byte numberOfAutoPulseTypes = randomPulsesEnabled + cubePulsesEnabled + starburstPulsesEnabled;
-byte currentAutoPulseType = 255;
-#define autoPulseChangeTime 30000
-unsigned long lastAutoPulseChange;
 
-#define simulatedHeartbeatBaseTime 600 // Fire a simulated heartbeat pulse after at least this many ms
-#define simulatedHeartbeatVariance 200 // Add random jitter to simulated heartbeat
-#define simulatedEdaBaseTime 1000      // Same, but for inward EDA pulses
-#define simulatedEdaVariance 10000
 unsigned long nextSimulatedHeartbeat;
 unsigned long nextSimulatedEda;
 
-void setup()
+// Task for running on Core 0
+TaskHandle_t Task1;
+
+void setupOTA()
 {
-  Serial.begin(115200);
-
-  Serial.println("*** LET'S GOOOOO ***");
-
-  for (int i = 0; i < 4; i++)
-  {
-    strips[i].begin();
-    strips[i].setBrightness(125); // If your PSU sucks, use this to limit the current
-    strips[i].show();
-  }
-
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
-  WiFi.config(ip, gateway, subnet);
-  while (WiFi.waitForConnectResult() != WL_CONNECTED)
-  {
-    Serial.println("Connection Failed! Rebooting...");
-    delay(5000);
-    ESP.restart();
-  }
-
-  Serial.print("WiFi connected, IP = ");
-  Serial.println(WiFi.localIP());
-
-#ifdef USING_EMOTI_BIT_SENSOR
-  // Subscribe to OSC transmissions for important data
-  OscWiFi.subscribe(recv_port, "/EmotiBit/0/EDA", [](const OscMessage &m) { // This weird syntax is a lambda expression (anonymous nameless function)
-    lastKnownTemperature = m.arg<float>(0);
-  });
-
-  OscWiFi.subscribe(recv_port, "/EmotiBit/0/GYRO:X", [](const OscMessage &m)
-                    { gyroX = m.arg<float>(0) * gyroAlpha + gyroX * (1 - gyroAlpha); });
-
-  OscWiFi.subscribe(recv_port, "/EmotiBit/0/GYRO:Y", [](const OscMessage &m)
-                    { gyroY = m.arg<float>(0) * gyroAlpha + gyroY * (1 - gyroAlpha); });
-
-  OscWiFi.subscribe(recv_port, "/EmotiBit/0/GYRO:Z", [](const OscMessage &m)
-                    { gyroZ = m.arg<float>(0) * gyroAlpha + gyroZ * (1 - gyroAlpha); });
-
-  // Heartbeat detection and visualization happens here
-  OscWiFi.subscribe(recv_port, "/EmotiBit/0/PPG:IR", [](const OscMessage &m)
-                    {
-    float reading = m.arg<float>(0);
-    Serial.println(reading);
-
-    int hue = 0;
-
-    //  Ignore heartbeat when finger is wiggling around - it's not accurate
-    float gyroTotal = abs(gyroX) + abs(gyroY) + abs(gyroZ);
-
-    if (gyroTotal < gyroThreshold && lastIrReading >= reading) {
-      // Our hand is sitting still and the reading dropped - let's pulse!
-      Serial.print("> ");
-      Serial.println(highestIrReading - reading);
-      if (highestIrReading - reading >= heartbeatDelta) {
-        if (millis() - lastHeartbeat >= heartbeatLockout) {
-          hue = fmap(lastKnownTemperature, lowTemperature, highTemperature, 0xFFFF, 0);
-          for (int i = 0; i < 6; i++) {
-            if (nodeConnections[15][i] > 0) {
-              bool firedRipple = false;
-              // Find a dead ripple to reuse it
-              for (int j = 0; j < 30; j++) {
-                if (!firedRipple && ripples[j].state == dead) {
-                  ripples[j].start(
-                    15,
-                    i,
-                    strip0.ColorHSV(hue, 255, 255),
-                    float(random(100)) / 100.0 * .2 + .8,
-                    500,
-                    2);
-
-                  firedRipple = true;
-                }
-              }
-            }
-          }
-        }
-
-        lastHeartbeat = millis();
-      }
-    }
-    else {
-      highestIrReading = 0;
-    }
-
-    lastIrReading = reading;
-    if (reading > highestIrReading)
-      highestIrReading = reading; });
-#endif
-
-  ArduinoOTA.setHostname("ESP8266");
-  ArduinoOTA.setPassword("esp8266");
-
+  String hostname(HOSTNAME);
+  // Start OTA server.
+  ArduinoOTA.setHostname(HOSTNAME);
+  ArduinoOTA.setPassword("esp32password");
   // Wireless OTA updating? On an ARDUINO?! It's more likely than you think!
   ArduinoOTA
       .onStart([]()
@@ -276,39 +141,89 @@ void setup()
       type = "sketch";
     else // U_SPIFFS
       type = "filesystem";
-
+    
+    activeOTAUpdate= true;
     // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
-    Serial.println("Start updating " + type); })
-      .onEnd([]()
-             { Serial.println("\nEnd"); })
-      .onProgress([](unsigned int progress, unsigned int total)
-                  { Serial.printf("Progress: %u%%\r", (progress / (total / 100))); })
-      .onError([](ota_error_t error)
-               {
-    Serial.printf("Error[%u]: ", error);
-    if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
-    else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
-    else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
-    else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
-    else if (error == OTA_END_ERROR) Serial.println("End Failed"); });
+    Serial.println("Start updating " + type); });
+  ArduinoOTA.onEnd([]()
+                   { Serial.println("\nEnd"); });
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total)
+                        { Serial.printf("Progress: %u%%\r", (progress / (total / 100))); });
+  ArduinoOTA.onError([](ota_error_t error)
+                     {
+                       Serial.printf("Error[%u]: ", error);
+                       if (error == OTA_AUTH_ERROR)
+                         Serial.println("Auth Failed");
+                       else if (error == OTA_BEGIN_ERROR)
+                         Serial.println("Begin Failed");
+                       else if (error == OTA_CONNECT_ERROR)
+                         Serial.println("Connect Failed");
+                       else if (error == OTA_RECEIVE_ERROR)
+                         Serial.println("Receive Failed");
+                       else if (error == OTA_END_ERROR)
+                         Serial.println("End Failed"); });
 
   ArduinoOTA.begin();
-
-  Serial.println("Ready for WiFi OTA updates");
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
 }
 
-void loop()
+void connectToWiFi()
 {
-  unsigned long benchmark = millis();
+  if (connected == true)
+    return;
 
-#ifdef USING_EMOTI_BIT_SENSOR
-  OscWiFi.parse();
-#endif
+  WiFiManager wifiManager;
 
-  ArduinoOTA.handle();
+  wifiManager.autoConnect(HOSTNAME);
 
+  Serial.printf("Hostname: %s", HOSTNAME);
+  Serial.print("WiFi connected! IP address: ");
+  Serial.println(WiFi.localIP());
+  setupOTA();
+  connected = true;
+}
+
+// Thread for running on opposite thread as loop
+void Task1code(void *pvParameters)
+{
+  Serial.print("Task1 running on core ");
+  Serial.println(xPortGetCoreID());
+
+  for (;;)
+  {
+    ArduinoOTA.handle();
+    // only check for OTA update every 1/2 second
+    delay(500);
+  }
+}
+
+void setup()
+{
+  Serial.begin(115200);
+
+  Serial.println("*** LET'S GOOOOO ***");
+
+  for (int i = 0; i < NUMBER_OF_STRIPS; i++)
+  {
+    strips[i].begin();
+    strips[i].setBrightness(125); // If your PSU sucks, use this to limit the current
+    strips[i].show();
+  }
+
+  connectToWiFi();
+
+  // loop and setup are pinned to core 1
+  xTaskCreatePinnedToCore(
+      Task1code, /* Task function. */
+      "Task1",   /* name of task. */
+      10000,     /* Stack size of task */
+      NULL,      /* parameter of the task */
+      1,         /* priority of the task */
+      &Task1,    /* Task handle to keep track of created task */
+      0);        /* pin task to core 0 */
+}
+
+void fade()
+{
   // Fade all dots to create trails
   for (int strip = 0; strip < 40; strip++)
   {
@@ -320,20 +235,40 @@ void loop()
       }
     }
   }
+}
 
+void advanceRipple()
+{
   for (int i = 0; i < numberOfRipples; i++)
   {
     ripples[i].advance(ledColors);
   }
+}
 
-  for (int segment = 0; segment < 40; segment++)
+void loop()
+{
+#ifdef USING_EMOTI_BIT_SENSOR
+  OscWiFi.parse();
+#endif
+
+  // We are doing an OTA update, might as well just stop
+  if (activeOTAUpdate)
   {
-    for (int fromBottom = 0; fromBottom < 14; fromBottom++)
+    return;
+  }
+
+  fade();
+
+  advanceRipple();
+
+  for (int segment = 0; segment < NUMBER_OF_SEGMENTS; segment++)
+  {
+    for (int fromBottom = 0; fromBottom < LEDS_PER_SEGMENTS; fromBottom++)
     {
       int strip = ledAssignments[segment][0];
       int led = round(fmap(
           fromBottom,
-          0, 13,
+          0, (LEDS_PER_SEGMENTS - 1),
           ledAssignments[segment][2], ledAssignments[segment][1]));
       strips[strip].setPixelColor(
           led,
@@ -343,7 +278,7 @@ void loop()
     }
   }
 
-  for (int i = 0; i < 4; i++)
+  for (int i = 0; i < NUMBER_OF_STRIPS; i++)
     strips[i].show();
 
 #ifdef USING_EMOTI_BIT_SENSOR
@@ -399,6 +334,7 @@ void loop()
       {
         int node = 0;
         bool foundStartingNode = false;
+
         while (!foundStartingNode)
         {
           node = random(25);
@@ -422,16 +358,15 @@ void loop()
           {
             for (int j = 0; j < numberOfRipples; j++)
             {
-              if (ripples[j].state == dead)
+              if (ripples[j].state == STATE_DEAD)
               {
                 ripples[j].start(
                     node,
                     i,
-                    //                      strip0.ColorHSV(baseColor + (0xFFFF / 6) * i, 255, 255),
                     strip0.ColorHSV(baseColor, 255, 255),
                     float(random(100)) / 100.0 * .2 + .5,
                     3000,
-                    1);
+                    BEHAVIOR_FEISTY);
 
                 break;
               }
@@ -451,7 +386,7 @@ void loop()
 
         lastAutoPulseNode = node;
 
-        byte behavior = random(2) ? alwaysTurnsLeft : alwaysTurnsRight;
+        rippleBehavior behavior = random(2) ? BEHAVIOR_ALWAYS_LEFT : BEHAVIOR_ALWAYS_RIGHT;
 
         for (int i = 0; i < 6; i++)
         {
@@ -459,15 +394,14 @@ void loop()
           {
             for (int j = 0; j < numberOfRipples; j++)
             {
-              if (ripples[j].state == dead)
+              if (ripples[j].state == STATE_DEAD)
               {
                 ripples[j].start(
                     node,
                     i,
-                    //                      strip0.ColorHSV(baseColor + (0xFFFF / 6) * i, 255, 255),
                     strip0.ColorHSV(baseColor, 255, 255),
-                    .5,
-                    2000,
+                    .8,
+                    3000,
                     behavior);
 
                 break;
@@ -481,7 +415,7 @@ void loop()
       // starburstPulsesEnabled
       case 2:
       {
-        byte behavior = random(2) ? alwaysTurnsLeft : alwaysTurnsRight;
+        rippleBehavior behavior = random(2) ? BEHAVIOR_ALWAYS_LEFT : BEHAVIOR_ALWAYS_RIGHT;
 
         lastAutoPulseNode = starburstNode;
 
@@ -489,14 +423,14 @@ void loop()
         {
           for (int j = 0; j < numberOfRipples; j++)
           {
-            if (ripples[j].state == dead)
+            if (ripples[j].state == STATE_DEAD)
             {
               ripples[j].start(
                   starburstNode,
                   i,
                   strip0.ColorHSV(baseColor + (0xFFFF / 6) * i, 255, 255),
                   .65,
-                  1500,
+                  2500,
                   behavior);
 
               break;
@@ -521,7 +455,7 @@ void loop()
         {
           for (int j = 0; j < numberOfRipples; j++)
           {
-            if (ripples[j].state == dead)
+            if (ripples[j].state == STATE_DEAD)
             {
               ripples[j].start(
                   15,
@@ -529,7 +463,7 @@ void loop()
                   0xEE1111,
                   float(random(100)) / 100.0 * .1 + .4,
                   1000,
-                  0);
+                  BEHAVIOR_WEAK);
 
               break;
             }
@@ -546,7 +480,7 @@ void loop()
         {
           for (int j = 0; j < numberOfRipples; j++)
           {
-            if (ripples[j].state == dead)
+            if (ripples[j].state == STATE_DEAD)
             {
               byte targetNode = borderNodes[random(numberOfBorderNodes)];
               byte direction = 255;
@@ -564,7 +498,7 @@ void loop()
                   0x1111EE,
                   float(random(100)) / 100.0 * .5 + 2,
                   300,
-                  2);
+                  BEHAVIOR_ANGRY);
 
               break;
             }
@@ -577,7 +511,4 @@ void loop()
 #ifdef USING_EMOTI_BIT_SENSOR
   }
 #endif
-
-  //  Serial.print("Benchmark: ");
-  //  Serial.println(millis() - benchmark);
 }
