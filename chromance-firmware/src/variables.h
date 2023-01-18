@@ -16,7 +16,7 @@
 #define NUMBER_OF_RIPPLES 30
 
 #define NUMBER_OF_NODES 25
-#define SIDES_PER_NODES 6
+#define MAX_SIDES_PER_NODES 6
 
 #define NUMBER_OF_SEGMENTS 40
 #define SIDES_PER_SEGMENT 2
@@ -30,6 +30,11 @@
 #define GREEN_LENGTH 168
 #define RED_LENGTH 84
 #define BLACK_LENGTH 154
+
+#define BLUE_INDEX 0
+#define GREEN_INDEX 1
+#define RED_INDEX 2
+#define BLACK_INDEX 3
 
 // CONVERT
 // BLUE = RED

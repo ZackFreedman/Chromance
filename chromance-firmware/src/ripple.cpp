@@ -93,11 +93,11 @@ void Ripple::advance(byte ledColors[NUMBER_OF_SEGMENTS][LEDS_PER_SEGMENTS][3])
 
                 int newDirection = -1;
 
-                int sharpLeft = (direction + 1) % SIDES_PER_NODES;
-                int wideLeft = (direction + 2) % SIDES_PER_NODES;
-                int forward = (direction + 3) % SIDES_PER_NODES;
-                int wideRight = (direction + 4) % SIDES_PER_NODES;
-                int sharpRight = (direction + 5) % SIDES_PER_NODES;
+                int sharpLeft = (direction + 1) % MAX_SIDES_PER_NODES;
+                int wideLeft = (direction + 2) % MAX_SIDES_PER_NODES;
+                int forward = (direction + 3) % MAX_SIDES_PER_NODES;
+                int wideRight = (direction + 4) % MAX_SIDES_PER_NODES;
+                int sharpRight = (direction + 5) % MAX_SIDES_PER_NODES;
 
                 if (behavior <= BEHAVIOR_ANGRY)
                 { // Semi-random aggressive turn mode
@@ -241,9 +241,9 @@ void Ripple::advance(byte ledColors[NUMBER_OF_SEGMENTS][LEDS_PER_SEGMENTS][3])
                 }
                 else if (behavior == BEHAVIOR_ALWAYS_RIGHT)
                 {
-                    for (int i = 1; i < SIDES_PER_NODES; i++)
+                    for (int i = 1; i < MAX_SIDES_PER_NODES; i++)
                     {
-                        int possibleDirection = (direction + i) % SIDES_PER_NODES;
+                        int possibleDirection = (direction + i) % MAX_SIDES_PER_NODES;
 
                         if (nodeConnections[node][possibleDirection] >= 0)
                         {
@@ -259,7 +259,7 @@ void Ripple::advance(byte ledColors[NUMBER_OF_SEGMENTS][LEDS_PER_SEGMENTS][3])
                 {
                     for (int i = 5; i >= 1; i--)
                     {
-                        int possibleDirection = (direction + i) % SIDES_PER_NODES;
+                        int possibleDirection = (direction + i) % MAX_SIDES_PER_NODES;
 
                         if (nodeConnections[node][possibleDirection] >= 0)
                         {
@@ -275,7 +275,7 @@ void Ripple::advance(byte ledColors[NUMBER_OF_SEGMENTS][LEDS_PER_SEGMENTS][3])
                 {
                     for (int i = 5; i >= 1; i--)
                     {
-                        int possibleDirection = (direction + i) % SIDES_PER_NODES;
+                        int possibleDirection = (direction + i) % MAX_SIDES_PER_NODES;
 
                         if (nodeConnections[node][possibleDirection] >= 0 && (possibleDirection != node))
                         {
@@ -351,7 +351,7 @@ void Ripple::advance(byte ledColors[NUMBER_OF_SEGMENTS][LEDS_PER_SEGMENTS][3])
                     Serial.print(node);
                     Serial.println("");
                 }
-                for (int i = 0; i < SIDES_PER_NODES; i++)
+                for (int i = 0; i < MAX_SIDES_PER_NODES; i++)
                 {
                     // Figure out from which direction the ripple is entering the node.
                     // Allows us to exit in an appropriately aggressive direction.

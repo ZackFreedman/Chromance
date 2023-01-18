@@ -12,9 +12,11 @@
 #define headof(S) ((S - 1) * LEDS_PER_SEGMENTS)
 #define tailof(S) (headof(S) + (LEDS_PER_SEGMENTS - 1))
 
+// led segment numbers
 // Beam 0 is at 12:00 and advance clockwise
 // -1 means nothing connected on that side
-const int nodeConnections[NUMBER_OF_NODES][SIDES_PER_NODES] = {
+// Index stands for the node ie nodeConnections[0] stands for node 0
+const int nodeConnections[NUMBER_OF_NODES][MAX_SIDES_PER_NODES] = {
     {-1, -1, 1, -1, 0, -1},
     {-1, -1, 3, -1, 2, -1},
     {-1, -1, 5, -1, 4, -1},
@@ -47,6 +49,7 @@ const int nodeConnections[NUMBER_OF_NODES][SIDES_PER_NODES] = {
 
 // First member: Node closer to ceiling
 // Second: Node closer to floor
+// Node connection list ()
 const int segmentConnections[NUMBER_OF_SEGMENTS][SIDES_PER_SEGMENT] = {
     {0, 3},
     {0, 4},
@@ -93,53 +96,53 @@ const int segmentConnections[NUMBER_OF_SEGMENTS][SIDES_PER_SEGMENT] = {
 // Second: LED index closer to ceiling
 // Third: LED index closer to floor
 const int ledAssignments[NUMBER_OF_SEGMENTS][3] = {
-    {2, headof(3), tailof(3)},
-    {2, tailof(2), headof(2)},
-    {1, headof(10), tailof(10)},
-    {1, tailof(9), headof(9)},
-    {1, headof(4), tailof(4)},
-    {1, tailof(3), headof(3)},
+    {RED_INDEX, headof(3), tailof(3)},
+    {RED_INDEX, tailof(2), headof(2)},
+    {GREEN_INDEX, headof(10), tailof(10)},
+    {GREEN_INDEX, tailof(9), headof(9)},
+    {GREEN_INDEX, headof(4), tailof(4)},
+    {GREEN_INDEX, tailof(3), headof(3)},
 
-    {2, tailof(6), headof(6)},
-    {3, tailof(11), headof(11)},
-    {1, headof(11), tailof(11)},
-    {1, tailof(8), headof(8)},
-    {1, headof(12), tailof(12)},
-    {0, tailof(11), headof(11)},
+    {RED_INDEX, tailof(6), headof(6)},
+    {BLACK_INDEX, tailof(11), headof(11)},
+    {GREEN_INDEX, headof(11), tailof(11)},
+    {GREEN_INDEX, tailof(8), headof(8)},
+    {GREEN_INDEX, headof(12), tailof(12)},
+    {BLUE_INDEX, tailof(11), headof(11)},
 
-    {2, headof(4), tailof(4)},
-    {3, tailof(10), headof(10)},
-    {2, tailof(1), headof(1)},
-    {1, tailof(7), headof(7)},
-    {1, headof(5), tailof(5)},
-    {0, tailof(10), headof(10)},
-    {1, tailof(2), headof(2)},
+    {RED_INDEX, headof(4), tailof(4)},
+    {BLACK_INDEX, tailof(10), headof(10)},
+    {RED_INDEX, tailof(1), headof(1)},
+    {GREEN_INDEX, tailof(7), headof(7)},
+    {GREEN_INDEX, headof(5), tailof(5)},
+    {BLUE_INDEX, tailof(10), headof(10)},
+    {GREEN_INDEX, tailof(2), headof(2)},
 
-    {2, headof(5), tailof(5)},
-    {3, tailof(4), headof(4)},
-    {3, headof(5), tailof(5)},
-    {0, headof(5), tailof(5)},
-    {0, tailof(4), headof(4)},
-    {1, tailof(1), headof(1)},
+    {RED_INDEX, headof(5), tailof(5)},
+    {BLACK_INDEX, tailof(4), headof(4)},
+    {BLACK_INDEX, headof(5), tailof(5)},
+    {BLUE_INDEX, headof(5), tailof(5)},
+    {BLUE_INDEX, tailof(4), headof(4)},
+    {GREEN_INDEX, tailof(1), headof(1)},
 
-    {3, tailof(9), headof(9)},
-    {0, headof(6), tailof(6)},
-    {1, tailof(6), headof(6)},
-    {0, tailof(9), headof(9)},
+    {BLACK_INDEX, tailof(9), headof(9)},
+    {BLUE_INDEX, headof(6), tailof(6)},
+    {GREEN_INDEX, tailof(6), headof(6)},
+    {BLUE_INDEX, tailof(9), headof(9)},
 
-    {3, tailof(3), headof(3)},
-    {3, tailof(8), headof(8)},
-    {3, headof(6), tailof(6)},
-    {0, tailof(8), headof(8)},
-    {0, tailof(3), headof(3)},
+    {BLACK_INDEX, tailof(3), headof(3)},
+    {BLACK_INDEX, tailof(8), headof(8)},
+    {BLACK_INDEX, headof(6), tailof(6)},
+    {BLUE_INDEX, tailof(8), headof(8)},
+    {BLUE_INDEX, tailof(3), headof(3)},
 
-    {3, tailof(2), headof(2)},
-    {3, headof(7), tailof(7)},
-    {0, headof(7), tailof(7)},
-    {0, tailof(2), headof(2)},
+    {BLACK_INDEX, tailof(2), headof(2)},
+    {BLACK_INDEX, headof(7), tailof(7)},
+    {BLUE_INDEX, headof(7), tailof(7)},
+    {BLUE_INDEX, tailof(2), headof(2)},
 
-    {3, tailof(1), headof(1)},
-    {0, tailof(1), headof(1)}};
+    {BLACK_INDEX, tailof(1), headof(1)},
+    {BLUE_INDEX, tailof(1), headof(1)}};
 
 // Border nodes are on the very edge of the network.
 // Ripples fired here don't look very impressive.
