@@ -397,7 +397,7 @@ void Ripple::advance(byte ledColors[NUMBER_OF_SEGMENTS][LEDS_PER_SEGMENTS][3])
                     Serial.print(node);
                     Serial.println("");
                 }
-                for (int i = 0; i < 6; i++)
+                for (int i = 0; i < MAX_SIDES_PER_NODES; i++)
                 {
                     // Figure out from which direction the ripple is entering the node.
                     // Allows us to exit in an appropriately aggressive direction.

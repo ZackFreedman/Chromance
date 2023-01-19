@@ -451,7 +451,7 @@ void loop()
       // Simulated heartbeat
       if (millis() >= nextSimulatedHeartbeat)
       {
-        for (int i = 0; i < 6; i++)
+        for (int i = 0; i < MAX_SIDES_PER_NODES; i++)
         {
           for (int j = 0; j < numberOfRipples; j++)
           {
@@ -487,7 +487,7 @@ void loop()
 
               while (direction == 255)
               {
-                direction = random(6);
+                direction = random(MAX_SIDES_PER_NODES);
                 if (nodeConnections[targetNode][direction] < 0)
                   direction = 255;
               }
