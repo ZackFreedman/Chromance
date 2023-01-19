@@ -205,7 +205,7 @@ void setup()
   for (int i = 0; i < NUMBER_OF_STRIPS; i++)
   {
     strips[i].begin();
-    strips[i].setBrightness(125); // If your PSU sucks, use this to limit the current
+    strips[i].setBrightness(255); // If your PSU sucks, use this to limit the current
     strips[i].show();
   }
 
@@ -352,7 +352,7 @@ void loop()
 
         lastAutoPulseNode = node;
 
-        for (int i = 0; i < 6; i++)
+        for (int i = 0; i < MAX_SIDES_PER_NODES; i++)
         {
           if (nodeConnections[node][i] >= 0)
           {
@@ -388,7 +388,7 @@ void loop()
 
         rippleBehavior behavior = random(2) ? BEHAVIOR_ALWAYS_LEFT : BEHAVIOR_ALWAYS_RIGHT;
 
-        for (int i = 0; i < 6; i++)
+        for (int i = 0; i < MAX_SIDES_PER_NODES; i++)
         {
           if (nodeConnections[node][i] >= 0)
           {
@@ -419,7 +419,7 @@ void loop()
 
         lastAutoPulseNode = starburstNode;
 
-        for (int i = 0; i < 6; i++)
+        for (int i = 0; i < MAX_SIDES_PER_NODES; i++)
         {
           for (int j = 0; j < numberOfRipples; j++)
           {
