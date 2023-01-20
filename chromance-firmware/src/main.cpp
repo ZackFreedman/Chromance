@@ -6,10 +6,6 @@
    (C) Voidstar Lab 2021
 */
 
-// TODO: USER SET
-// COMMENT OUT IF NOT USING
-// #define USING_EMOTI_BIT_SENSOR
-
 #include <Arduino.h>
 
 #include "variables.h"
@@ -22,9 +18,6 @@
 #endif
 
 #include <SPI.h>
-#ifdef USING_EMOTI_BIT_SENSOR
-#include <ArduinoOSCWiFi.h>
-#endif
 #include <WiFi.h>
 #include <ESPmDNS.h>
 #include <WiFiUdp.h>
@@ -34,11 +27,15 @@
 
 #include <WiFiManager.h> //https://github.com/tzapu/WiFiManager WiFi Configuration Magic
 
+// Function declarations
 void connectToWiFi(const char *ssid, const char *pwd);
 void setupOTA(void);
+void continueAnimation(void);
 void fade(void);
 void advanceRipple(void);
 void Task1code(void *pvParameters);
+void getNextAnimation(void);
+// End Function declarations
 
 #ifdef USING_DOTSTAR
 Adafruit_DotStar strip0(BLUE_LENGTH, BLUE_STRIP_DATA_PIN, BLUE_STRIP_CLOCK_PIN, DOTSTAR_BRG);
@@ -62,6 +59,7 @@ byte ledColors[NUMBER_OF_SEGMENTS][LEDS_PER_SEGMENTS][NUMBER_OF_STRIPS - 1]; // 
 
 // These ripples are endlessly reused so we don't need to do any memory management
 #define numberOfRipples 30
+#define RIPPES_TIMEOUT (numberOfRipples * 1000)
 Ripple ripples[numberOfRipples] = {
     Ripple(0),
     Ripple(1),
@@ -95,26 +93,7 @@ Ripple ripples[numberOfRipples] = {
     Ripple(29),
 };
 
-// Biometric detection and interpretation
-// IR (heartbeat) is used to fire outward ripples
-float lastIrReading;         // When our heart pumps, reflected IR drops sharply
-float highestIrReading;      // These vars let us detect this drop
-unsigned long lastHeartbeat; // Track last heartbeat so we can detect noise/disconnections
-#define heartbeatLockout 500 // Heartbeats that happen within this many milliseconds are ignored
-#define heartbeatDelta 300   // Drop in reflected IR that constitutes a heartbeat
-
-// Heartbeat color ripples are proportional to skin temperature
-#define lowTemperature 33.0                                            // Resting temperature
-#define highTemperature 37.0                                           // Really fired up
-float lastKnownTemperature = (lowTemperature + highTemperature) / 2.0; // Carries skin temperature from temperature callback to IR callback
-
-// EDA code was too unreliable and was cut.
-// TODO: Rebuild EDA code
-
-// Gyroscope is used to reject data if you're moving too much
-#define gyroAlpha 0.9     // Exponential smoothing constant
-#define gyroThreshold 300 // Minimum angular velocity total (X+Y+Z) that disqualifies readings
-float gyroX, gyroY, gyroZ;
+unsigned int baseColor = random(0xFFFF);
 
 unsigned long lastRandomPulse;
 
@@ -128,7 +107,6 @@ TaskHandle_t Task1;
 
 void setupOTA()
 {
-  String hostname(HOSTNAME);
   // Start OTA server.
   ArduinoOTA.setHostname(HOSTNAME);
   ArduinoOTA.setPassword("esp32password");
@@ -173,11 +151,9 @@ void connectToWiFi()
 
   WiFiManager wifiManager;
 
+  wifiManager.setWiFiAutoReconnect(true);
   wifiManager.autoConnect(HOSTNAME);
-
-  Serial.printf("Hostname: %s", HOSTNAME);
-  Serial.print("WiFi connected! IP address: ");
-  Serial.println(WiFi.localIP());
+  Serial.printf("WiFi connected! IP address: %s", WiFi.localIP());
   setupOTA();
   connected = true;
 }
@@ -199,7 +175,6 @@ void Task1code(void *pvParameters)
 void setup()
 {
   Serial.begin(115200);
-
   Serial.println("*** LET'S GOOOOO ***");
 
   for (int i = 0; i < NUMBER_OF_STRIPS; i++)
@@ -222,14 +197,55 @@ void setup()
       0);        /* pin task to core 0 */
 }
 
+void getNextAnimation()
+{
+  if (currentAutoPulseType == 255 || (numberOfAutoPulseTypes > 1 && millis() - lastAutoPulseChange >= RIPPES_TIMEOUT))
+  {
+    byte possiblePulse = 255;
+
+    while (true)
+    {
+      possiblePulse = random(NUMBER_OF_ANIMATIONS);
+
+      if (possiblePulse == currentAutoPulseType)
+        continue;
+
+      switch (possiblePulse)
+      {
+      case 0:
+        if (!randomPulsesEnabled)
+          continue;
+        break;
+
+      case 1:
+        if (!cubePulsesEnabled)
+          continue;
+        break;
+
+      case 2:
+        if (!starburstPulsesEnabled)
+          continue;
+        break;
+
+      default:
+        continue;
+      }
+      currentAutoPulseType = possiblePulse;
+      lastAutoPulseChange = millis();
+
+      break;
+    }
+  }
+}
+
 void fade()
 {
   // Fade all dots to create trails
-  for (int strip = 0; strip < 40; strip++)
+  for (int strip = 0; strip < NUMBER_OF_SEGMENTS; strip++)
   {
-    for (int led = 0; led < 14; led++)
+    for (int led = 0; led < LEDS_PER_SEGMENTS; led++)
     {
-      for (int i = 0; i < 3; i++)
+      for (int i = 0; i < (NUMBER_OF_STRIPS - 1); i++)
       {
         ledColors[strip][led][i] *= decay;
       }
@@ -245,20 +261,9 @@ void advanceRipple()
   }
 }
 
-void loop()
+void continueAnimation()
 {
-#ifdef USING_EMOTI_BIT_SENSOR
-  OscWiFi.parse();
-#endif
-
-  // We are doing an OTA update, might as well just stop
-  if (activeOTAUpdate)
-  {
-    return;
-  }
-
   fade();
-
   advanceRipple();
 
   for (int segment = 0; segment < NUMBER_OF_SEGMENTS; segment++)
@@ -280,235 +285,169 @@ void loop()
 
   for (int i = 0; i < NUMBER_OF_STRIPS; i++)
     strips[i].show();
+}
 
-#ifdef USING_EMOTI_BIT_SENSOR
-  if (millis() - lastHeartbeat >= autoPulseTimeout)
+void randomPulse()
+{
+  int node = 0;
+  bool foundStartingNode = false;
+
+  while (!foundStartingNode)
   {
-#endif
-    // When biometric data is unavailable, visualize at random
-    if (numberOfAutoPulseTypes && millis() - lastRandomPulse >= randomPulseTime)
+    node = random(25);
+    foundStartingNode = true;
+    for (int i = 0; i < numberOfBorderNodes; i++)
     {
-      unsigned int baseColor = random(0xFFFF);
+      // Don't fire a pulse on one of the outer nodes - it looks boring
+      if (node == borderNodes[i])
+        foundStartingNode = false;
+    }
 
-      if (currentAutoPulseType == 255 || (numberOfAutoPulseTypes > 1 && millis() - lastAutoPulseChange >= autoPulseChangeTime))
+    if (node == lastAutoPulseNode)
+      foundStartingNode = false;
+  }
+
+  lastAutoPulseNode = node;
+
+  for (int i = 0; i < MAX_SIDES_PER_NODES; i++)
+  {
+    if (nodeConnections[node][i] >= 0)
+    {
+      for (int j = 0; j < numberOfRipples; j++)
       {
-        byte possiblePulse = 255;
-        while (true)
+        if (ripples[j].state == STATE_DEAD)
         {
-          possiblePulse = random(3);
+          ripples[j].start(
+              node,
+              i,
+              strip0.ColorHSV(baseColor, 255, 255),
+              float(random(100)) / 100.0 * .2 + .5,
+              3000,
+              BEHAVIOR_FEISTY);
 
-          if (possiblePulse == currentAutoPulseType)
-            continue;
-
-          switch (possiblePulse)
-          {
-          case 0:
-            if (!randomPulsesEnabled)
-              continue;
-            break;
-
-          case 1:
-            if (!cubePulsesEnabled)
-              continue;
-            break;
-
-          case 2:
-            if (!starburstPulsesEnabled)
-              continue;
-            break;
-
-          default:
-            continue;
-          }
-
-          currentAutoPulseType = possiblePulse;
-          lastAutoPulseChange = millis();
           break;
         }
       }
-
-      switch (currentAutoPulseType)
-      {
-        // RANDOM PULSES
-      case 0:
-      {
-        int node = 0;
-        bool foundStartingNode = false;
-
-        while (!foundStartingNode)
-        {
-          node = random(25);
-          foundStartingNode = true;
-          for (int i = 0; i < numberOfBorderNodes; i++)
-          {
-            // Don't fire a pulse on one of the outer nodes - it looks boring
-            if (node == borderNodes[i])
-              foundStartingNode = false;
-          }
-
-          if (node == lastAutoPulseNode)
-            foundStartingNode = false;
-        }
-
-        lastAutoPulseNode = node;
-
-        for (int i = 0; i < MAX_SIDES_PER_NODES; i++)
-        {
-          if (nodeConnections[node][i] >= 0)
-          {
-            for (int j = 0; j < numberOfRipples; j++)
-            {
-              if (ripples[j].state == STATE_DEAD)
-              {
-                ripples[j].start(
-                    node,
-                    i,
-                    strip0.ColorHSV(baseColor, 255, 255),
-                    float(random(100)) / 100.0 * .2 + .5,
-                    3000,
-                    BEHAVIOR_FEISTY);
-
-                break;
-              }
-            }
-          }
-        }
-        break;
-      }
-
-      // cubePulsesEnabled
-      case 1:
-      {
-        int node = cubeNodes[random(numberOfCubeNodes)];
-
-        while (node == lastAutoPulseNode)
-          node = cubeNodes[random(numberOfCubeNodes)];
-
-        lastAutoPulseNode = node;
-
-        rippleBehavior behavior = random(2) ? BEHAVIOR_ALWAYS_LEFT : BEHAVIOR_ALWAYS_RIGHT;
-
-        for (int i = 0; i < MAX_SIDES_PER_NODES; i++)
-        {
-          if (nodeConnections[node][i] >= 0)
-          {
-            for (int j = 0; j < numberOfRipples; j++)
-            {
-              if (ripples[j].state == STATE_DEAD)
-              {
-                ripples[j].start(
-                    node,
-                    i,
-                    strip0.ColorHSV(baseColor, 255, 255),
-                    .8,
-                    3000,
-                    behavior);
-
-                break;
-              }
-            }
-          }
-        }
-        break;
-      }
-
-      // starburstPulsesEnabled
-      case 2:
-      {
-        rippleBehavior behavior = random(2) ? BEHAVIOR_ALWAYS_LEFT : BEHAVIOR_ALWAYS_RIGHT;
-
-        lastAutoPulseNode = starburstNode;
-
-        for (int i = 0; i < MAX_SIDES_PER_NODES; i++)
-        {
-          for (int j = 0; j < numberOfRipples; j++)
-          {
-            if (ripples[j].state == STATE_DEAD)
-            {
-              ripples[j].start(
-                  starburstNode,
-                  i,
-                  strip0.ColorHSV(baseColor + (0xFFFF / 6) * i, 255, 255),
-                  .65,
-                  2500,
-                  behavior);
-
-              break;
-            }
-          }
-        }
-        break;
-      }
-
-      default:
-        break;
-      }
-      lastRandomPulse = millis();
     }
-
-    if (simulatedBiometricsEnabled)
-    {
-      // Simulated heartbeat
-      if (millis() >= nextSimulatedHeartbeat)
-      {
-        for (int i = 0; i < MAX_SIDES_PER_NODES; i++)
-        {
-          for (int j = 0; j < numberOfRipples; j++)
-          {
-            if (ripples[j].state == STATE_DEAD)
-            {
-              ripples[j].start(
-                  15,
-                  i,
-                  0xEE1111,
-                  float(random(100)) / 100.0 * .1 + .4,
-                  1000,
-                  BEHAVIOR_WEAK);
-
-              break;
-            }
-          }
-        }
-
-        nextSimulatedHeartbeat = millis() + simulatedHeartbeatBaseTime + random(simulatedHeartbeatVariance);
-      }
-
-      // Simulated EDA ripples
-      if (millis() >= nextSimulatedEda)
-      {
-        for (int i = 0; i < 10; i++)
-        {
-          for (int j = 0; j < numberOfRipples; j++)
-          {
-            if (ripples[j].state == STATE_DEAD)
-            {
-              byte targetNode = borderNodes[random(numberOfBorderNodes)];
-              byte direction = 255;
-
-              while (direction == 255)
-              {
-                direction = random(MAX_SIDES_PER_NODES);
-                if (nodeConnections[targetNode][direction] < 0)
-                  direction = 255;
-              }
-
-              ripples[j].start(
-                  targetNode,
-                  direction,
-                  0x1111EE,
-                  float(random(100)) / 100.0 * .5 + 2,
-                  300,
-                  BEHAVIOR_ANGRY);
-
-              break;
-            }
-          }
-        }
-
-        nextSimulatedEda = millis() + simulatedEdaBaseTime + random(simulatedEdaVariance);
-      }
-    }
-#ifdef USING_EMOTI_BIT_SENSOR
   }
-#endif
+}
+
+void cubePulse()
+{
+  int node = cubeNodes[random(numberOfCubeNodes)];
+
+  while (node == lastAutoPulseNode)
+    node = cubeNodes[random(numberOfCubeNodes)];
+
+  lastAutoPulseNode = node;
+
+  rippleBehavior behavior = random(2) ? BEHAVIOR_ALWAYS_LEFT : BEHAVIOR_ALWAYS_RIGHT;
+
+  for (int i = 0; i < MAX_SIDES_PER_NODES; i++)
+  {
+    if (nodeConnections[node][i] >= 0)
+    {
+      for (int j = 0; j < numberOfRipples; j++)
+      {
+        if (ripples[j].state == STATE_DEAD)
+        {
+          ripples[j].start(
+              node,
+              i,
+              strip0.ColorHSV(baseColor, 255, 255),
+              .8,
+              3000,
+              behavior);
+
+          break;
+        }
+      }
+    }
+  }
+}
+
+void starburstPulse()
+{
+  rippleBehavior behavior = random(2) ? BEHAVIOR_ALWAYS_LEFT : BEHAVIOR_ALWAYS_RIGHT;
+
+  lastAutoPulseNode = starburstNode;
+
+  for (int i = 0; i < MAX_SIDES_PER_NODES; i++)
+  {
+    for (int j = 0; j < numberOfRipples; j++)
+    {
+      if (ripples[j].state == STATE_DEAD)
+      {
+        ripples[j].start(
+            starburstNode,
+            i,
+            strip0.ColorHSV(baseColor + (0xFFFF / 6) * i, 255, 255),
+            .65,
+            2500,
+            behavior);
+
+        break;
+      }
+    }
+  }
+}
+
+void startAnimation(byte animation)
+{
+  switch (currentAutoPulseType)
+  {
+    // RANDOM PULSES
+  case 0:
+  {
+    randomPulse();
+    break;
+  }
+
+  // cubePulsesEnabled
+  case 1:
+  {
+    cubePulse();
+    break;
+  }
+
+  // starburstPulsesEnabled
+  case 2:
+  {
+    starburstPulse();
+    break;
+  }
+
+  default:
+    break;
+  }
+}
+
+void loop()
+{
+  // We are doing an OTA update, might as well just stop
+  if (activeOTAUpdate)
+  {
+    return;
+  }
+
+  continueAnimation();
+
+  if (numberOfAutoPulseTypes && millis() - lastRandomPulse >= randomPulseTime)
+  {
+    // float lastColor = (float)baseColor / (float)0xFFFF * 360;
+    // while (true)
+    // {
+    baseColor = random(0xFFFF);
+    //   float currentColor = baseColor / 65535 * 360;
+    //   int hueDistance = min(abs(lastColor - currentColor), 360 - abs(lastColor - currentColor));
+    //   if (hueDistance > 20)
+    //     break;
+    // }
+
+    // change animation every 30 seconds
+    getNextAnimation();
+
+    startAnimation(currentAutoPulseType);
+    lastRandomPulse = millis();
+  }
 }

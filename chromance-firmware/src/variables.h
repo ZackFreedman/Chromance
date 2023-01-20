@@ -25,6 +25,7 @@
 #define LEDS_PER_SEGMENTS 14
 
 #define NUMBER_OF_STRIPS 4
+#define NUMBER_OF_ANIMATIONS 3
 
 #define BLUE_LENGTH 154
 #define GREEN_LENGTH 168
@@ -60,20 +61,11 @@
 
 // If you don't have an EmotiBit or don't feel like wearing it, that's OK
 // We'll fire automatic pulses
-#define randomPulsesEnabled true         // Fire random rainbow pulses from random nodes
-#define cubePulsesEnabled true           // Draw cubes at random nodes
-#define starburstPulsesEnabled true      // Draw starbursts
-#define simulatedBiometricsEnabled false // Simulate heartbeat and EDA ripples
+#define randomPulsesEnabled true    // Fire random rainbow pulses from random nodes
+#define cubePulsesEnabled true      // Draw cubes at random nodes
+#define starburstPulsesEnabled true // Draw starbursts
 
-#define autoPulseTimeout 5000 // If no heartbeat is received in this many ms, begin firing random/simulated pulses
 #define randomPulseTime 2000  // Fire a random pulse every (this many) ms
-
-#define autoPulseChangeTime 30000
-
-#define simulatedHeartbeatBaseTime 600 // Fire a simulated heartbeat pulse after at least this many ms
-#define simulatedHeartbeatVariance 200 // Add random jitter to simulated heartbeat
-#define simulatedEdaBaseTime 1000      // Same, but for inward EDA pulses
-#define simulatedEdaVariance 10000
 
 extern const uint16_t g_hue;
 extern unsigned int localPort; // local port to listen on
