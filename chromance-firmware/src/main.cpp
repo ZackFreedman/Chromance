@@ -35,6 +35,8 @@ void fade(void);
 void advanceRipple(void);
 void Task1code(void *pvParameters);
 void getNextAnimation(void);
+void loop(void);
+void setup(void);
 // End Function declarations
 
 #ifdef USING_DOTSTAR
@@ -43,7 +45,7 @@ Adafruit_DotStar strip1(GREEN_LENGTH, GREEN_STRIP_DATA_PIN, GREEN_STRIP_CLOCK_PI
 Adafruit_DotStar strip2(RED_LENGTH, RED_STRIP_DATA_PIN, RED_STRIP_CLOCK_PIN, DOTSTAR_BRG);
 Adafruit_DotStar strip3(BLACK_LENGTH, BLACK_STRIP_DATA_PIN, BLUE_STRIP_CLOCK_PIN, DOTSTAR_BRG);
 
-Adafruit_DotStar strips[4] = {strip0, strip1, strip2, strip3};
+Adafruit_DotStar strips[NUMBER_OF_STRIPS] = {strip0, strip1, strip2, strip3};
 #endif
 
 #ifdef USING_NEOPIXEL
@@ -55,12 +57,11 @@ Adafruit_NeoPixel strip3(BLACK_LENGTH, BLACK_STRIP_DATA_PIN, NEO_GRB + NEO_KHZ80
 Adafruit_NeoPixel strips[NUMBER_OF_STRIPS] = {strip0, strip1, strip2, strip3};
 #endif
 
-byte ledColors[NUMBER_OF_SEGMENTS][LEDS_PER_SEGMENTS][NUMBER_OF_STRIPS - 1]; // LED buffer - each ripple writes to this, then we write this to the strips
+// LED buffer - each ripple writes to this, then we write this to the strips
+byte ledColors[NUMBER_OF_SEGMENTS][LEDS_PER_SEGMENTS][NUMBER_OF_STRIPS - 1];
 
 // These ripples are endlessly reused so we don't need to do any memory management
-#define numberOfRipples 30
-#define RIPPES_TIMEOUT (numberOfRipples * 1000)
-Ripple ripples[numberOfRipples] = {
+Ripple ripples[NUMBER_OF_RIPPLES] = {
     Ripple(0),
     Ripple(1),
     Ripple(2),
@@ -103,7 +104,21 @@ unsigned long nextSimulatedHeartbeat;
 unsigned long nextSimulatedEda;
 
 // Task for running on Core 0
-TaskHandle_t Task1;
+TaskHandle_t HandleArduinoOTA_Task;
+
+// Thread for running on opposite thread as loop
+void HandleArduinoOTA(void *pvParameters)
+{
+  Serial.print("Task1 running on core ");
+  Serial.println(xPortGetCoreID());
+
+  for (;;)
+  {
+    ArduinoOTA.handle();
+    // only check for OTA update every 1/2 second
+    delay(500);
+  }
+}
 
 void setupOTA()
 {
@@ -142,6 +157,16 @@ void setupOTA()
                          Serial.println("End Failed"); });
 
   ArduinoOTA.begin();
+
+  // loop and setup are pinned to core 1
+  xTaskCreatePinnedToCore(
+      HandleArduinoOTA,        /* Task function. */
+      "HandleArduinoOTA_Task", /* name of task. */
+      10000,                   /* Stack size of task */
+      NULL,                    /* parameter of the task */
+      1,                       /* priority of the task */
+      &HandleArduinoOTA_Task,  /* Task handle to keep track of created task */
+      0);                      /* pin task to core 0 */
 }
 
 void connectToWiFi()
@@ -154,47 +179,7 @@ void connectToWiFi()
   wifiManager.setWiFiAutoReconnect(true);
   wifiManager.autoConnect(HOSTNAME);
   Serial.printf("WiFi connected! IP address: %s", WiFi.localIP());
-  setupOTA();
   connected = true;
-}
-
-// Thread for running on opposite thread as loop
-void Task1code(void *pvParameters)
-{
-  Serial.print("Task1 running on core ");
-  Serial.println(xPortGetCoreID());
-
-  for (;;)
-  {
-    ArduinoOTA.handle();
-    // only check for OTA update every 1/2 second
-    delay(500);
-  }
-}
-
-void setup()
-{
-  Serial.begin(115200);
-  Serial.println("*** LET'S GOOOOO ***");
-
-  for (int i = 0; i < NUMBER_OF_STRIPS; i++)
-  {
-    strips[i].begin();
-    strips[i].setBrightness(255); // If your PSU sucks, use this to limit the current
-    strips[i].show();
-  }
-
-  connectToWiFi();
-
-  // loop and setup are pinned to core 1
-  xTaskCreatePinnedToCore(
-      Task1code, /* Task function. */
-      "Task1",   /* name of task. */
-      10000,     /* Stack size of task */
-      NULL,      /* parameter of the task */
-      1,         /* priority of the task */
-      &Task1,    /* Task handle to keep track of created task */
-      0);        /* pin task to core 0 */
 }
 
 void getNextAnimation()
@@ -238,6 +223,7 @@ void getNextAnimation()
   }
 }
 
+/// Decays the color on each led
 void fade()
 {
   // Fade all dots to create trails
@@ -253,14 +239,18 @@ void fade()
   }
 }
 
+// Advances the ripple forward one pixel
 void advanceRipple()
 {
-  for (int i = 0; i < numberOfRipples; i++)
+  for (int i = 0; i < NUMBER_OF_RIPPLES; i++)
   {
     ripples[i].advance(ledColors);
   }
 }
 
+// Fades the animation
+// Advances the ripple
+// Updates the pixel color
 void continueAnimation()
 {
   fade();
@@ -287,6 +277,11 @@ void continueAnimation()
     strips[i].show();
 }
 
+u_int32_t getRandomColor()
+{
+  return strip0.ColorHSV(baseColor, 255, 255);
+}
+
 void randomPulse()
 {
   int node = 0;
@@ -309,20 +304,20 @@ void randomPulse()
 
   lastAutoPulseNode = node;
 
-  for (int i = 0; i < MAX_SIDES_PER_NODES; i++)
+  for (int i = 0; i < MAX_PATHS_PER_NODES; i++)
   {
     if (nodeConnections[node][i] >= 0)
     {
-      for (int j = 0; j < numberOfRipples; j++)
+      for (int j = 0; j < NUMBER_OF_RIPPLES; j++)
       {
         if (ripples[j].state == STATE_DEAD)
         {
           ripples[j].start(
               node,
               i,
-              strip0.ColorHSV(baseColor, 255, 255),
+              getRandomColor(),
               float(random(100)) / 100.0 * .2 + .5,
-              3000,
+              ANIMATION_TIME,
               BEHAVIOR_FEISTY);
 
           break;
@@ -343,20 +338,20 @@ void cubePulse()
 
   rippleBehavior behavior = random(2) ? BEHAVIOR_ALWAYS_LEFT : BEHAVIOR_ALWAYS_RIGHT;
 
-  for (int i = 0; i < MAX_SIDES_PER_NODES; i++)
+  for (int i = 0; i < MAX_PATHS_PER_NODES; i++)
   {
     if (nodeConnections[node][i] >= 0)
     {
-      for (int j = 0; j < numberOfRipples; j++)
+      for (int j = 0; j < NUMBER_OF_RIPPLES; j++)
       {
         if (ripples[j].state == STATE_DEAD)
         {
           ripples[j].start(
               node,
               i,
-              strip0.ColorHSV(baseColor, 255, 255),
+              getRandomColor(),
               .8,
-              3000,
+              ANIMATION_TIME,
               behavior);
 
           break;
@@ -372,9 +367,9 @@ void starburstPulse()
 
   lastAutoPulseNode = starburstNode;
 
-  for (int i = 0; i < MAX_SIDES_PER_NODES; i++)
+  for (int i = 0; i < MAX_PATHS_PER_NODES; i++)
   {
-    for (int j = 0; j < numberOfRipples; j++)
+    for (int j = 0; j < NUMBER_OF_RIPPLES; j++)
     {
       if (ripples[j].state == STATE_DEAD)
       {
@@ -383,7 +378,7 @@ void starburstPulse()
             i,
             strip0.ColorHSV(baseColor + (0xFFFF / 6) * i, 255, 255),
             .65,
-            2500,
+            2600,
             behavior);
 
         break;
@@ -420,6 +415,22 @@ void startAnimation(byte animation)
   default:
     break;
   }
+}
+
+void setup()
+{
+  Serial.begin(115200);
+  Serial.println("*** LET'S GOOOOO ***");
+
+  for (int i = 0; i < NUMBER_OF_STRIPS; i++)
+  {
+    strips[i].begin();
+    strips[i].setBrightness(255); // If your PSU sucks, use this to limit the current
+    strips[i].show();
+  }
+
+  connectToWiFi();
+  setupOTA();
 }
 
 void loop()

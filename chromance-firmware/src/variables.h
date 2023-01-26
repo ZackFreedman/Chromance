@@ -14,9 +14,12 @@
 
 #define HOSTNAME "Chromance" ///< Hostname. The setup function adds the Chip ID at the end.
 #define NUMBER_OF_RIPPLES 30
+#define RIPPES_TIMEOUT (NUMBER_OF_RIPPLES * 1000)
+
+#define ANIMATION_TIME 3000
 
 #define NUMBER_OF_NODES 25
-#define MAX_SIDES_PER_NODES 6
+#define MAX_PATHS_PER_NODES 6
 
 #define NUMBER_OF_SEGMENTS 40
 #define SIDES_PER_SEGMENT 2
@@ -65,7 +68,7 @@
 #define cubePulsesEnabled true      // Draw cubes at random nodes
 #define starburstPulsesEnabled true // Draw starbursts
 
-#define randomPulseTime 2000  // Fire a random pulse every (this many) ms
+#define randomPulseTime 2000 // Fire a random pulse every (this many) ms
 
 extern const uint16_t g_hue;
 extern unsigned int localPort; // local port to listen on

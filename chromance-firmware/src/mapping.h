@@ -16,7 +16,7 @@
 // Beam 0 is at 12:00 and advance clockwise
 // -1 means nothing connected on that side
 // Index stands for the node ie nodeConnections[0] stands for node 0
-const int nodeConnections[NUMBER_OF_NODES][MAX_SIDES_PER_NODES] = {
+const int nodeConnections[NUMBER_OF_NODES][MAX_PATHS_PER_NODES] = {
     {-1, -1, 1, -1, 0, -1},
     {-1, -1, 3, -1, 2, -1},
     {-1, -1, 5, -1, 4, -1},
