@@ -284,23 +284,9 @@ u_int32_t getRandomColor()
 
 void randomPulse()
 {
-  int node = 0;
-  bool foundStartingNode = false;
-
-  while (!foundStartingNode)
-  {
-    node = random(25);
-    foundStartingNode = true;
-    for (int i = 0; i < numberOfBorderNodes; i++)
-    {
-      // Don't fire a pulse on one of the outer nodes - it looks boring
-      if (node == borderNodes[i])
-        foundStartingNode = false;
-    }
-
-    if (node == lastAutoPulseNode)
-      foundStartingNode = false;
-  }
+  int node = funNodes[random(numberOfFunNodes)];
+  while (node == lastAutoPulseNode)
+    node = funNodes[random(numberOfFunNodes)];
 
   lastAutoPulseNode = node;
 

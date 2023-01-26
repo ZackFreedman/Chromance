@@ -15,7 +15,7 @@
 // led segment numbers
 // Beam 0 is at 12:00 and advance clockwise
 // -1 means nothing connected on that side
-// Index stands for the node ie nodeConnections[0] stands for node 0
+// Index stands for the node ie nodeConnections[7] stands for node 7
 const int nodeConnections[NUMBER_OF_NODES][MAX_PATHS_PER_NODES] = {
     {-1, -1, 1, -1, 0, -1},
     {-1, -1, 3, -1, 2, -1},
@@ -33,7 +33,7 @@ const int nodeConnections[NUMBER_OF_NODES][MAX_PATHS_PER_NODES] = {
     {14, -1, 21, -1, 20, -1},
     {16, -1, 23, -1, 22, -1},
     {18, -1, -1, -1, 24, -1},
-    {13, 20, 25, 29, -1, -1},
+    {13, 20, 25, 29, -1, 19},
 
     {15, 22, 27, 31, 26, 21},
     {17, 24, -1, 33, 28, 23},
@@ -154,8 +154,8 @@ const int borderNodes[] = {0, 1, 2, 3, 6, 10, 13, 19, 21, 24};
 const int numberOfCubeNodes = 8;
 const int cubeNodes[] = {7, 8, 9, 11, 12, 17, 18, 20};
 
-const int numberOfTriNodes = 13;
-const int triNodes[] = {4, 5, 7, 8, 9, 11, 12, 14, 15, 16, 17, 18, 20};
+const int numberOfFunNodes = 7;
+const int funNodes[] = {4, 5, 10, 14, 15, 16, 22, 23};
 
 // Firing ripples that always turn in one direction will draw a starburst
 const int starburstNode = 15;
