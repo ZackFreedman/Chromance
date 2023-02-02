@@ -1,6 +1,6 @@
 How to Setup
 ---
-- Open up [chromance-firmware.ino](https://github.com/ZackFreedman/Chromance/blob/main/chromance-firmware/chromance-firmware.ino) Locally
+- Open up [chromance-firmware.ino](https://github.com/ZackFreedman/Chromance/blob/main/chromance-firmware/src/variables.h) Locally
 - Edit the following
   - `ssid`: With your WIFI SSID
   - `password`: With your WIFI Password
