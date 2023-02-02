@@ -19,6 +19,7 @@
 
 #include <SPI.h>
 #include <WiFi.h>
+#include "time.h"
 #include <ESPmDNS.h>
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h>
@@ -38,6 +39,13 @@ void getNextAnimation(void);
 void loop(void);
 void setup(void);
 // End Function declarations
+
+const char *ntpServer = "pool.ntp.org";
+const long gmtOffset_sec = -14400;
+const int daylightOffset_sec = 3600;
+// sleep 10 hours
+const uint64_t TIME_TO_SLEEP = 36000;    /* Time ESP32 will go to sleep (in seconds) */
+const uint64_t uS_TO_S_FACTOR = 1000000; /* Conversion factor for micro seconds to seconds */
 
 #ifdef USING_DOTSTAR
 Adafruit_DotStar strip0(BLUE_LENGTH, BLUE_STRIP_DATA_PIN, BLUE_STRIP_CLOCK_PIN, DOTSTAR_BRG);
@@ -115,6 +123,19 @@ void HandleArduinoOTA(void *pvParameters)
   for (;;)
   {
     ArduinoOTA.handle();
+
+    struct tm timeinfo;
+    if (!getLocalTime(&timeinfo))
+    {
+      Serial.println("Failed to obtain time");
+      return;
+    }
+
+    if (timeinfo.tm_hour >= 22 || timeinfo.tm_hour <= 1)
+    {
+      esp_deep_sleep_start();
+    }
+
     // only check for OTA update every 1/2 second
     delay(500);
   }
@@ -144,6 +165,7 @@ void setupOTA()
                         { Serial.printf("Progress: %u%%\r", (progress / (total / 100))); });
   ArduinoOTA.onError([](ota_error_t error)
                      {
+                      activeOTAUpdate= false;
                        Serial.printf("Error[%u]: ", error);
                        if (error == OTA_AUTH_ERROR)
                          Serial.println("Auth Failed");
@@ -417,6 +439,8 @@ void setup()
 
   connectToWiFi();
   setupOTA();
+  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+  esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
 }
 
 void loop()

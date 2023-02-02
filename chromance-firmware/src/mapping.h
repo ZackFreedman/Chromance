@@ -154,8 +154,8 @@ const int borderNodes[] = {0, 1, 2, 3, 6, 10, 13, 19, 21, 24};
 const int numberOfCubeNodes = 8;
 const int cubeNodes[] = {7, 8, 9, 11, 12, 17, 18, 20};
 
-const int numberOfFunNodes = 7;
-const int funNodes[] = {4, 5, 10, 14, 15, 16, 22, 23};
+const int numberOfFunNodes = 6;
+const int funNodes[] = {4, 5, 14, 15, 16, 22, 23};
 
 // Firing ripples that always turn in one direction will draw a starburst
 const int starburstNode = 15;

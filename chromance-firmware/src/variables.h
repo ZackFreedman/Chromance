@@ -8,9 +8,19 @@
 
 #include <WiFi.h>
 
+#define DOTSTAR 1
+#define NEOPIXEL 2
 // TODO: USER SET
-// COMMENT OUT IF NOT USING
-// #define USING_EMOTI_BIT_SENSOR
+// SET TO DOTSTAR OR NEOPIXEL, DEPENDING ON WHAT YOU ARE USING
+#define __LED_TYPE NEOPIXEL
+
+#if __LED_TYPE == DOTSTAR
+#define USING_DOTSTAR
+#undef USING_NEOPIXEL
+#elif __LED_TYPE == NEOPIXEL
+#define USING_NEOPIXEL
+#undef USING_DOTSTAR
+#endif
 
 #define HOSTNAME "Chromance" ///< Hostname. The setup function adds the Chip ID at the end.
 #define NUMBER_OF_RIPPLES 30
@@ -82,19 +92,4 @@ extern byte lastAutoPulseNode;
 extern byte currentAutoPulseType;
 extern unsigned long lastAutoPulseChange;
 extern bool activeOTAUpdate;
-
-#define DOTSTAR 1
-#define NEOPIXEL 2
-// TODO: USER SET
-// SET TO DOTSTAR OR NEOPIXEL, DEPENDING ON WHAT YOU ARE USING
-#define __LED_TYPE NEOPIXEL
-
-#if __LED_TYPE == DOTSTAR
-#define USING_DOTSTAR
-#undef USING_NEOPIXEL
-#elif __LED_TYPE == NEOPIXEL
-#define USING_NEOPIXEL
-#undef USING_DOTSTAR
-#endif
-
 #endif
